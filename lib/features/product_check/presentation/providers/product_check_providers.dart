@@ -72,4 +72,20 @@ final class ProductLookupController
       return useCase(stockCode.trim());
     });
   }
+
+  /// Manuel arama: once stok kodu (sku), sonuc yoksa barkod — ikisi de repository
+  /// icinde girilen metne tam eslesen kayitlarla sinirlanir (API tum listeyi
+  /// dondurse bile filtrelenir).
+  Future<void> searchByQuery(String raw) async {
+    final query = raw.trim();
+    if (query.isEmpty) return;
+
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final bySku = await ref.read(findProductByStockCodeProvider)(query);
+      if (bySku.isNotEmpty) return bySku;
+
+      return ref.read(findProductByBarcodeProvider)(query);
+    });
+  }
 }

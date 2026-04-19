@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -13,13 +14,13 @@ final class ProductCheckPage extends ConsumerStatefulWidget {
 }
 
 final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
-  final TextEditingController _stockCodeController = TextEditingController();
+  final TextEditingController _queryController = TextEditingController();
   bool _isScannerVisible = false;
   String _lastScanned = '';
 
   @override
   void dispose() {
-    _stockCodeController.dispose();
+    _queryController.dispose();
     super.dispose();
   }
 
@@ -38,17 +39,20 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
               children: [
                 Expanded(
                   child: TextField(
-                    controller: _stockCodeController,
+                    controller: _queryController,
                     decoration: const InputDecoration(
-                      labelText: 'Stok kodu giriniz',
+                      labelText: 'Stok kodu veya barkod',
+                      hintText: 'Manuel yazin veya asagidan okutun',
                       border: OutlineInputBorder(),
                     ),
-                    onSubmitted: (_) => _searchByStockCode(),
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _searchByQuery(),
                   ),
                 ),
                 const SizedBox(width: 8),
                 FilledButton(
-                  onPressed: _searchByStockCode,
+                  onPressed: _searchByQuery,
                   child: const Text('Ara'),
                 ),
               ],
@@ -113,7 +117,7 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                 if (products.isEmpty) {
                   return const Center(
                     child: Text(
-                      'Barkod okutun veya stok kodu ile arama yapin.',
+                      'Barkod okutun veya stok kodu / barkod ile arama yapin.',
                     ),
                   );
                 }
@@ -132,10 +136,10 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
     );
   }
 
-  void _searchByStockCode() {
-    final query = _stockCodeController.text.trim();
+  void _searchByQuery() {
+    final query = _queryController.text.trim();
     if (query.isEmpty) return;
-    ref.read(productLookupProvider.notifier).searchByStockCode(query);
+    ref.read(productLookupProvider.notifier).searchByQuery(query);
   }
 }
 
@@ -146,24 +150,232 @@ final class _ProductResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Card(
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(12),
-        leading: product.imageUrl.isEmpty
-            ? const Icon(Icons.inventory_2_outlined)
-            : Image.network(
-                product.imageUrl,
-                width: 56,
-                height: 56,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) =>
-                    const Icon(Icons.inventory_2_outlined),
+      clipBehavior: Clip.antiAlias,
+      elevation: 2,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: theme.colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.5,
+            ),
+            child: InkWell(
+              onTap: product.imageUrl.isEmpty
+                  ? null
+                  : () => _openImagePreview(context, product.imageUrl),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: product.imageUrl.isEmpty
+                    ? Center(
+                        child: Icon(
+                          Icons.image_not_supported_outlined,
+                          size: 72,
+                          color: theme.colorScheme.outline,
+                        ),
+                      )
+                    : Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CachedNetworkImage(
+                            imageUrl: product.imageUrl,
+                            fit: BoxFit.contain,
+                            memCacheWidth: (MediaQuery.sizeOf(context).width *
+                                    MediaQuery.of(context).devicePixelRatio)
+                                .round(),
+                            placeholder: (_, __) => const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                            errorWidget: (_, __, ___) => Center(
+                              child: Icon(
+                                Icons.broken_image_outlined,
+                                size: 64,
+                                color: theme.colorScheme.error,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: 8,
+                            bottom: 8,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surface
+                                    .withValues(alpha: 0.92),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.zoom_in_rounded,
+                                      size: 18,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Buyut',
+                                      style:
+                                          theme.textTheme.labelMedium?.copyWith(
+                                        color: theme.colorScheme.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
-        title: Text(product.name),
-        subtitle: Text(
-          'Stok: ${product.stockCode}\nBarkod: ${product.barcode}\nMiktar: ${product.stockAmount}',
-        ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    height: 1.25,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _InfoLine(
+                  icon: Icons.numbers_rounded,
+                  label: 'Stok kodu',
+                  value: product.stockCode,
+                ),
+                const SizedBox(height: 8),
+                _InfoLine(
+                  icon: Icons.qr_code_2_rounded,
+                  label: 'Barkod',
+                  value: product.barcode,
+                  emphasize: true,
+                ),
+                const SizedBox(height: 8),
+                _InfoLine(
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Depo miktari',
+                  value: product.stockAmount % 1 == 0
+                      ? product.stockAmount.toInt().toString()
+                      : product.stockAmount.toString(),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  void _openImagePreview(BuildContext context, String imageUrl) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.paddingOf(ctx).top + 8,
+                right: 8,
+                child: IconButton.filled(
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white24,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              Positioned(
+                bottom: MediaQuery.paddingOf(ctx).bottom + 16,
+                left: 0,
+                right: 0,
+                child: Text(
+                  'Parmakla yaklastir / uzaklastir',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Colors.white70,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+final class _InfoLine extends StatelessWidget {
+  const _InfoLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.emphasize = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final bool emphasize;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final valueStyle =
+        emphasize
+            ? theme.textTheme.titleMedium?.copyWith(
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            )
+            : theme.textTheme.bodyLarge;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 22, color: theme.colorScheme.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 2),
+              SelectableText(value, style: valueStyle),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

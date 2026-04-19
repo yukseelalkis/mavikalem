@@ -44,7 +44,7 @@ final class ProductRemoteDataSource {
   }
 
   List<ProductBriefModel> _parse(dynamic raw) {
-    final list = ApiResponseParser.parseList(raw);
+    final list = ApiResponseParser.parseProductList(raw);
     return list
         .whereType<Map<String, dynamic>>()
         .map(ProductBriefModel.fromJson)
