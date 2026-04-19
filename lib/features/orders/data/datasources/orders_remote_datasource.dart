@@ -9,15 +9,23 @@ final class OrdersRemoteDataSource {
 
   final Dio _dio;
 
+  /// Postman ile uyumlu sorgu: `sort=-id`, `limit=50`, `createdAt~lte=<simdi>`,
+  /// `page=<sayfa>`. Tarih cihaz yerel saati; Dio query map ile degerleri URL-encode eder.
+  static const String _sortNewestIdFirst = '-id';
+
+  /// [orders_providers] icindeki [ordersPageLimit] ile ayni kalmali.
+  static const int _limit = 50;
+
   Future<List<OrderResponseModel>> fetchIncomingOrders({
     required int page,
-    required int limit,
-    String? sort,
   }) async {
-    final queryParameters = <String, dynamic>{'page': page, 'limit': limit};
-    if (sort != null && sort.isNotEmpty) {
-      queryParameters['sort'] = sort;
-    }
+    final lteLocal = _formatDeviceLocalDateTime(DateTime.now());
+    final queryParameters = <String, dynamic>{
+      'sort': _sortNewestIdFirst,
+      'limit': _limit,
+      'page': page,
+      'createdAt~lte': lteLocal,
+    };
 
     final response = await _dio.get<dynamic>(
       ApiEndpoints.incomingOrders,
@@ -33,6 +41,14 @@ final class OrdersRemoteDataSource {
     orders.sort(compareOrdersNewestFirst);
 
     return orders;
+  }
+
+  /// `yyyy-MM-dd HH:mm:ss` — API `createdAt~lte` filtre degeri (yerel zaman).
+  static String _formatDeviceLocalDateTime(DateTime local) {
+    String p2(int v) => v.toString().padLeft(2, '0');
+    final d = local;
+    return '${d.year}-${p2(d.month)}-${p2(d.day)} '
+        '${p2(d.hour)}:${p2(d.minute)}:${p2(d.second)}';
   }
 
   Future<OrderResponseModel> fetchOrderDetail(int orderId) async {

@@ -10,14 +10,8 @@ final class OrdersRepositoryImpl implements OrdersRepository {
   @override
   Future<List<OrderEntity>> getIncomingOrders({
     required int page,
-    required int limit,
-    String? sort,
   }) {
-    return _remoteDataSource.fetchIncomingOrders(
-      page: page,
-      limit: limit,
-      sort: sort,
-    );
+    return _remoteDataSource.fetchIncomingOrders(page: page);
   }
 
   @override

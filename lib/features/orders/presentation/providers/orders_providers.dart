@@ -97,7 +97,7 @@ final class OrdersPaginationController
 
     try {
       final useCase = _ref.read(getIncomingOrdersUseCaseProvider);
-      final firstPage = await useCase(page: 1, limit: ordersPageLimit);
+      final firstPage = await useCase(page: 1);
 
       state = state.copyWith(
         isInitialLoading: false,
@@ -122,7 +122,7 @@ final class OrdersPaginationController
     try {
       final nextPage = state.currentPage + 1;
       final useCase = _ref.read(getIncomingOrdersUseCaseProvider);
-      final incoming = await useCase(page: nextPage, limit: ordersPageLimit);
+      final incoming = await useCase(page: nextPage);
 
       final merged = _dedupeById(<OrderEntity>[...state.orders, ...incoming]);
 

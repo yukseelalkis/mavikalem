@@ -8,9 +8,7 @@ final class GetIncomingOrders {
 
   Future<List<OrderEntity>> call({
     required int page,
-    required int limit,
-    String? sort,
   }) {
-    return _repository.getIncomingOrders(page: page, limit: limit, sort: sort);
+    return _repository.getIncomingOrders(page: page);
   }
 }
