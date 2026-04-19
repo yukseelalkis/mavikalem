@@ -236,6 +236,10 @@ final class _ProductResultCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final urls = product.imageUrls
+        .map((u) => u.trim())
+        .where((u) => u.isNotEmpty)
+        .toList();
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -247,80 +251,7 @@ final class _ProductResultCard extends StatelessWidget {
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.5,
             ),
-            child: InkWell(
-              onTap: product.imageUrl.isEmpty
-                  ? null
-                  : () => _openImagePreview(context, product.imageUrl),
-              child: AspectRatio(
-                aspectRatio: 1,
-                child: product.imageUrl.isEmpty
-                    ? Center(
-                        child: Icon(
-                          Icons.image_not_supported_outlined,
-                          size: 72,
-                          color: theme.colorScheme.outline,
-                        ),
-                      )
-                    : Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CachedNetworkImage(
-                            imageUrl: product.imageUrl,
-                            fit: BoxFit.contain,
-                            memCacheWidth: (MediaQuery.sizeOf(context).width *
-                                    MediaQuery.of(context).devicePixelRatio)
-                                .round(),
-                            placeholder: (_, __) => const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            errorWidget: (_, __, ___) => Center(
-                              child: Icon(
-                                Icons.broken_image_outlined,
-                                size: 64,
-                                color: theme.colorScheme.error,
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            right: 8,
-                            bottom: 8,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.surface
-                                    .withValues(alpha: 0.92),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.zoom_in_rounded,
-                                      size: 18,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'Buyut',
-                                      style:
-                                          theme.textTheme.labelMedium?.copyWith(
-                                        color: theme.colorScheme.primary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
+            child: _ProductImageCarousel(imageUrls: urls),
           ),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -362,55 +293,288 @@ final class _ProductResultCard extends StatelessWidget {
       ),
     );
   }
+}
 
-  void _openImagePreview(BuildContext context, String imageUrl) {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black87,
-      builder: (ctx) {
-        return Dialog.fullscreen(
-          backgroundColor: Colors.black,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              InteractiveViewer(
+final class _ProductImageCarousel extends StatefulWidget {
+  const _ProductImageCarousel({required this.imageUrls});
+
+  final List<String> imageUrls;
+
+  @override
+  State<_ProductImageCarousel> createState() => _ProductImageCarouselState();
+}
+
+final class _ProductImageCarouselState extends State<_ProductImageCarousel> {
+  late final PageController _pageController;
+  var _pageIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final urls = widget.imageUrls;
+
+    if (urls.isEmpty) {
+      return AspectRatio(
+        aspectRatio: 1,
+        child: Center(
+          child: Icon(
+            Icons.image_not_supported_outlined,
+            size: 72,
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      );
+    }
+
+    final memCacheW =
+        (MediaQuery.sizeOf(context).width *
+                MediaQuery.of(context).devicePixelRatio)
+            .round();
+
+    final showDots = urls.length > 1;
+
+    return AspectRatio(
+      aspectRatio: 1,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            physics: const BouncingScrollPhysics(),
+            itemCount: urls.length,
+            onPageChanged: (i) => setState(() => _pageIndex = i),
+            itemBuilder: (context, index) {
+              return CachedNetworkImage(
+                imageUrl: urls[index],
+                fit: BoxFit.contain,
+                memCacheWidth: memCacheW,
+                placeholder: (_, __) => Center(
+                  child: CircularProgressIndicator(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                errorWidget: (_, __, ___) => Center(
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    size: 64,
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              );
+            },
+          ),
+          if (showDots)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 44,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(urls.length, (i) {
+                  final active = i == _pageIndex;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: active ? 18 : 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: active
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.outline.withValues(alpha: 0.45),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          Positioned(
+            right: 8,
+            bottom: showDots ? 12 : 8,
+            child: Material(
+              color: theme.colorScheme.surface.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () =>
+                    _showProductImageGallery(context, urls, _pageIndex),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.zoom_in_rounded,
+                        size: 18,
+                        color: theme.colorScheme.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Buyut',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showProductImageGallery(
+  BuildContext context,
+  List<String> urls,
+  int initialIndex,
+) {
+  final safe = urls.where((u) => u.trim().isNotEmpty).toList(growable: false);
+  if (safe.isEmpty) return;
+  final i = initialIndex.clamp(0, safe.length - 1);
+
+  showDialog<void>(
+    context: context,
+    barrierColor: Colors.black87,
+    builder: (ctx) => _FullscreenProductGallery(
+      urls: safe,
+      initialIndex: i,
+    ),
+  );
+}
+
+final class _FullscreenProductGallery extends StatefulWidget {
+  const _FullscreenProductGallery({
+    required this.urls,
+    required this.initialIndex,
+  });
+
+  final List<String> urls;
+  final int initialIndex;
+
+  @override
+  State<_FullscreenProductGallery> createState() =>
+      _FullscreenProductGalleryState();
+}
+
+final class _FullscreenProductGalleryState extends State<_FullscreenProductGallery> {
+  late final PageController _controller;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex.clamp(0, widget.urls.length - 1);
+    _controller = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final urls = widget.urls;
+    final showDots = urls.length > 1;
+
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: _controller,
+            physics: const BouncingScrollPhysics(),
+            itemCount: urls.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (context, index) {
+              return InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 5,
                 child: Center(
                   child: CachedNetworkImage(
-                    imageUrl: imageUrl,
+                    imageUrl: urls[index],
                     fit: BoxFit.contain,
+                    errorWidget: (_, __, ___) => Icon(
+                      Icons.broken_image_outlined,
+                      size: 72,
+                      color: theme.colorScheme.error,
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: MediaQuery.paddingOf(ctx).top + 8,
-                right: 8,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white24,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ),
-              Positioned(
-                bottom: MediaQuery.paddingOf(ctx).bottom + 16,
-                left: 0,
-                right: 0,
-                child: Text(
-                  'Parmakla yaklastir / uzaklastir',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Colors.white70,
-                      ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
-        );
-      },
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 8,
+            right: 8,
+            child: IconButton.filled(
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white24,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close),
+            ),
+          ),
+          if (showDots)
+            Positioned(
+              bottom: MediaQuery.paddingOf(context).bottom + 56,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(urls.length, (i) {
+                  final active = i == _index;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: active ? 18 : 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: active ? Colors.white : Colors.white38,
+                    ),
+                  );
+                }),
+              ),
+            ),
+          Positioned(
+            bottom: MediaQuery.paddingOf(context).bottom + 16,
+            left: 0,
+            right: 0,
+            child: Text(
+              showDots
+                  ? '${_index + 1} / ${urls.length} • Parmakla yaklastir'
+                  : 'Parmakla yaklastir / uzaklastir',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: Colors.white70),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

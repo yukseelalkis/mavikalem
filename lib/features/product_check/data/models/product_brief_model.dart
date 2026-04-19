@@ -6,20 +6,11 @@ final class ProductBriefModel extends ProductBriefEntity {
     required super.name,
     required super.stockCode,
     required super.barcode,
-    required super.imageUrl,
+    required super.imageUrls,
     required super.stockAmount,
   });
 
   factory ProductBriefModel.fromJson(Map<String, dynamic> json) {
-    final images = json['images'] as List<dynamic>? ?? <dynamic>[];
-    final firstImage = images.isNotEmpty
-        ? images.first as Map<String, dynamic>?
-        : null;
-    final imageUrl = firstImage == null
-        ? ''
-        : 'https://www.mavikalem.tr/idea/rf/86/myassets/products/'
-              '${firstImage['directoryName']}/${firstImage['filename']}.${firstImage['extension']}';
-
     final nested = json['product'];
     final nestedMap =
         nested is Map<String, dynamic> ? nested : null;
@@ -66,6 +57,11 @@ final class ProductBriefModel extends ProductBriefEntity {
             : null) ??
         0;
 
+    var urls = _collectImageUrls(json);
+    if (urls.isEmpty && nestedMap != null) {
+      urls = _collectImageUrls(nestedMap);
+    }
+
     return ProductBriefModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name:
@@ -73,9 +69,39 @@ final class ProductBriefModel extends ProductBriefEntity {
               .toString(),
       stockCode: stockOut,
       barcode: barOut,
-      imageUrl: imageUrl,
+      imageUrls: urls,
       stockAmount: stockAmt.toDouble(),
     );
+  }
+
+  static const String _productImageBase =
+      'https://www.mavikalem.tr/idea/rf/86/myassets/products/';
+
+  static List<String> _collectImageUrls(Map<String, dynamic> json) {
+    final images = json['images'] as List<dynamic>? ?? <dynamic>[];
+    final out = <String>[];
+
+    for (final raw in images) {
+      if (raw is! Map<String, dynamic>) continue;
+      final dir = raw['directoryName']?.toString().trim();
+      final fn = raw['filename']?.toString().trim();
+      final ext = raw['extension']?.toString().trim();
+      if (dir == null || fn == null || ext == null) continue;
+      if (dir.isEmpty || fn.isEmpty || ext.isEmpty) continue;
+      out.add('$_productImageBase$dir/$fn.$ext');
+    }
+
+    if (out.isEmpty) {
+      final direct = json['imageUrl'] ?? json['image'];
+      if (direct != null) {
+        final s = direct.toString().trim();
+        if (s.isNotEmpty && s != '-') {
+          out.add(s);
+        }
+      }
+    }
+
+    return out;
   }
 
   static String? _firstNonEmptyString(

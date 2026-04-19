@@ -4,7 +4,7 @@ class ProductBriefEntity {
     required this.name,
     required this.stockCode,
     required this.barcode,
-    required this.imageUrl,
+    this.imageUrls = const <String>[],
     required this.stockAmount,
   });
 
@@ -12,6 +12,12 @@ class ProductBriefEntity {
   final String name;
   final String stockCode;
   final String barcode;
-  final String imageUrl;
+
+  /// Bos olmayan tum urun gorselleri (API `images` dizisinden).
+  final List<String> imageUrls;
+
+  /// Ilk gorsel URL; tek resim / geriye donuk kullanim.
+  String get imageUrl => imageUrls.isEmpty ? '' : imageUrls.first;
+
   final double stockAmount;
 }
