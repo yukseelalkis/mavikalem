@@ -17,6 +17,8 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
   final TextEditingController _queryController = TextEditingController();
   bool _isScannerVisible = false;
   String _lastScanned = '';
+  /// En az bir arama/kamera okumasi yapildi mi (bos sonuc mesaji icin).
+  bool _lookupAttempted = false;
 
   @override
   void dispose() {
@@ -42,7 +44,8 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                     controller: _queryController,
                     decoration: const InputDecoration(
                       labelText: 'Stok kodu veya barkod',
-                      hintText: 'Manuel yazin veya asagidan okutun',
+                      hintText:
+                          'Ayni kutuya yazin; sistem ikisinde de arar',
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.text,
@@ -98,9 +101,10 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                             : (capture.barcodes.first.rawValue ?? '');
                         if (code.isEmpty || code == _lastScanned) return;
                         _lastScanned = code;
+                        setState(() => _lookupAttempted = true);
                         ref
                             .read(productLookupProvider.notifier)
-                            .searchByBarcode(code);
+                            .searchByQuery(code);
                       },
                     ),
                     const ScannerOverlay(),
@@ -115,9 +119,50 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                   Center(child: Text('Urun aranirken hata: $error')),
               data: (products) {
                 if (products.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Barkod okutun veya stok kodu / barkod ile arama yapin.',
+                  if (!_lookupAttempted) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Stok kodu veya barkod yazip Ara\'ya basin; '
+                          'isterseniz asagidan barkod okutun. '
+                          'Sistem her iki alanda da ayni metni arar.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.search_off_rounded,
+                            size: 56,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Urun bulunamadi',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Girdiginiz deger stok kodu veya barkod ile '
+                            'eslesen bir urun bulunamadi.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
@@ -139,6 +184,7 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
   void _searchByQuery() {
     final query = _queryController.text.trim();
     if (query.isEmpty) return;
+    setState(() => _lookupAttempted = true);
     ref.read(productLookupProvider.notifier).searchByQuery(query);
   }
 }

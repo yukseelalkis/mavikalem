@@ -58,11 +58,7 @@ final class ProductLookupController
   }
 
   Future<void> searchByBarcode(String barcode) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final useCase = ref.read(findProductByBarcodeProvider);
-      return useCase(barcode.trim());
-    });
+    await searchByQuery(barcode);
   }
 
   Future<void> searchByStockCode(String stockCode) async {
@@ -73,9 +69,7 @@ final class ProductLookupController
     });
   }
 
-  /// Manuel arama: once stok kodu (sku), sonuc yoksa barkod — ikisi de repository
-  /// icinde girilen metne tam eslesen kayitlarla sinirlanir (API tum listeyi
-  /// dondurse bile filtrelenir).
+  /// Tek input: once `?sku=`, sonuc yoksa `?q[barcode]=` (repository tam eslesme sutzu).
   Future<void> searchByQuery(String raw) async {
     final query = raw.trim();
     if (query.isEmpty) return;

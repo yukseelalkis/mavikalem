@@ -8,18 +8,28 @@ final class ProductRemoteDataSource {
 
   final Dio _dio;
 
+  static const int _searchLimit = 20;
+
+  /// GET /api/products?q[barcode]={query}
   Future<List<ProductBriefModel>> fetchByBarcode(String barcode) async {
     final response = await _dio.get<dynamic>(
       ApiEndpoints.products,
-      queryParameters: <String, dynamic>{'barcode': barcode, 'limit': 20},
+      queryParameters: <String, dynamic>{
+        'q[barcode]': barcode.trim(),
+        'limit': _searchLimit,
+      },
     );
     return _parse(response.data);
   }
 
+  /// GET /api/products?sku={query}
   Future<List<ProductBriefModel>> fetchByStockCode(String stockCode) async {
     final response = await _dio.get<dynamic>(
       ApiEndpoints.products,
-      queryParameters: <String, dynamic>{'sku': stockCode, 'limit': 20},
+      queryParameters: <String, dynamic>{
+        'sku': stockCode.trim(),
+        'limit': _searchLimit,
+      },
     );
     return _parse(response.data);
   }
