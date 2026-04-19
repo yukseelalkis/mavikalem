@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:mavikalem_app/product/model/product_model.dart';
 import 'package:mavikalem_app/product/model/category_model.dart';
@@ -6,12 +7,10 @@ import 'package:mavikalem_app/product/model/category_model.dart';
 final class CategoryService {
   static const String _baseUrl = 'https://mavikalem.myideasoft.com/api';
   final String _token =
-      'OWIwZjRiNmFhZDBlOTYwMTlhMmI1YTNiNmNlYzc4ZDliNDA2ZWExYzNmNzZhMTI3MjA2ZGZhYzM1ZmQxYmE0NQ';
+      'ZGM0MGY4MjEyNjNiZTM1OGE2YTg4NDYyMTc5MGFjZTRiOTcyMGRjNWE3NGFlZDM2N2QwYTA2MDQ1NmY0OGE0Yw';
 
   Future<List<CategoryModel>> fetchCategories() async {
-    final url = Uri.parse(
-      '$_baseUrl/categories?limit=100',
-    ); // Limiti 100 tuttuk
+    final url = Uri.parse('$_baseUrl/categories?limit=50'); // Limiti 100 tuttuk
     try {
       final response = await http.get(
         url,
@@ -69,7 +68,7 @@ final class CategoryService {
       }
       throw Exception('Kategori hatası');
     } catch (e) {
-      print("Kategori Çekme Hatası: $e");
+      debugPrint('Kategori Cekme Hatasi: $e');
       rethrow;
     }
   }
@@ -78,7 +77,7 @@ final class CategoryService {
 final class ProductService {
   static const String _baseUrl = 'https://mavikalem.myideasoft.com/api';
   final String _token =
-      'OWIwZjRiNmFhZDBlOTYwMTlhMmI1YTNiNmNlYzc4ZDliNDA2ZWExYzNmNzZhMTI3MjA2ZGZhYzM1ZmQxYmE0NQ';
+      'ZGM0MGY4MjEyNjNiZTM1OGE2YTg4NDYyMTc5MGFjZTRiOTcyMGRjNWE3NGFlZDM2N2QwYTA2MDQ1NmY0OGE0Yw';
 
   /// 1. Mevcut Kategoriye Göre Listeleme Metodu
   Future<List<ProductModel>> fetchProducts({int? categoryId}) async {
@@ -127,7 +126,7 @@ final class ProductService {
       }
       return null;
     } catch (e) {
-      print("SKU Sorgu Hatası: $e");
+      debugPrint('SKU Sorgu Hatasi: $e');
       return null;
     }
   }
@@ -158,7 +157,7 @@ final class ProductService {
       }
       return [];
     } catch (e) {
-      print("Arama Hatası: $e");
+      debugPrint('Arama Hatasi: $e');
       return [];
     }
   }
