@@ -3,4 +3,6 @@ import 'package:mavikalem_app/features/product_check/domain/entities/product_bri
 abstract interface class ProductRepository {
   Future<List<ProductBriefEntity>> findByBarcode(String barcode);
   Future<List<ProductBriefEntity>> findByStockCode(String stockCode);
+
+  Future<ProductBriefEntity> getById(int productId);
 }

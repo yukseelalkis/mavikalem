@@ -27,6 +27,13 @@ final productRepositoryProvider = Provider<ProductRepository>((ref) {
   return ProductRepositoryImpl(remote);
 });
 
+/// Siparis kalemi icin GET /products/{id} — Riverpod family onbellek + goruntu icin CachedNetworkImage.
+final productBriefByIdProvider =
+    FutureProvider.family<ProductBriefEntity, int>((ref, productId) async {
+      final repo = ref.watch(productRepositoryProvider);
+      return repo.getById(productId);
+    });
+
 final findProductByBarcodeProvider = Provider<FindProductByBarcode>((ref) {
   final repository = ref.watch(productRepositoryProvider);
   return FindProductByBarcode(repository);

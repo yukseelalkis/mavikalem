@@ -24,6 +24,25 @@ final class ProductRemoteDataSource {
     return _parse(response.data);
   }
 
+  Future<ProductBriefModel> fetchById(int id) async {
+    final response = await _dio.get<dynamic>(
+      '${ApiEndpoints.products}/$id',
+    );
+    final raw = response.data;
+    Map<String, dynamic> map;
+    if (raw is Map<String, dynamic>) {
+      final nested = raw['data'];
+      if (nested is Map<String, dynamic>) {
+        map = nested;
+      } else {
+        map = raw;
+      }
+    } else {
+      map = ApiResponseParser.parseMap(raw);
+    }
+    return ProductBriefModel.fromJson(map);
+  }
+
   List<ProductBriefModel> _parse(dynamic raw) {
     final list = ApiResponseParser.parseList(raw);
     return list

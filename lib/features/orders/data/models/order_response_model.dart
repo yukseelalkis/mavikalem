@@ -1,5 +1,6 @@
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
+import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
 
 const String _orderItemPlaceholderImageUrl = 'https://via.placeholder.com/64';
 
@@ -49,6 +50,60 @@ DateTime? _parseDynamicDate(dynamic raw) {
   return DateTime.tryParse(normalized);
 }
 
+double? _parseMoney(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is num) return raw.toDouble();
+  final s = raw.toString().trim().replaceAll(',', '.');
+  return double.tryParse(s);
+}
+
+String? _optionalTrimmedString(dynamic raw) {
+  if (raw == null) return null;
+  final s = raw.toString().trim();
+  return s.isEmpty ? null : s;
+}
+
+ShippingAddressEntity? _parseShipping(dynamic raw) {
+  if (raw is! Map<String, dynamic>) return null;
+  final json = raw;
+  final fn = (json['firstname'] ?? json['firstName'] ?? '').toString().trim();
+  final ln = (json['lastname'] ?? json['lastName'] ?? '').toString().trim();
+  var full = '$fn $ln'.trim();
+  if (full.isEmpty) {
+    full = _optionalTrimmedString(
+          json['fullName'] ?? json['customerName'] ?? json['name'],
+        ) ??
+        '';
+  }
+  final phone =
+      _optionalTrimmedString(json['phone'] ?? json['mobilePhone'] ?? json['gsm']) ??
+      '';
+  final address =
+      _optionalTrimmedString(
+        json['address'] ?? json['address1'] ?? json['addressLine'],
+      ) ??
+      '';
+  final location =
+      _optionalTrimmedString(
+        json['location'] ?? json['city'] ?? json['province'],
+      ) ??
+      '';
+  final subLocation =
+      _optionalTrimmedString(
+        json['subLocation'] ?? json['district'] ?? json['town'],
+      ) ??
+      '';
+
+  final entity = ShippingAddressEntity(
+    fullName: full,
+    phone: phone,
+    address: address,
+    location: location,
+    subLocation: subLocation,
+  );
+  return entity.isEmpty ? null : entity;
+}
+
 final class OrderResponseModel extends OrderEntity {
   const OrderResponseModel({
     required super.id,
@@ -57,6 +112,9 @@ final class OrderResponseModel extends OrderEntity {
     required super.status,
     required super.createdAt,
     required super.items,
+    super.shippingAddress,
+    super.finalAmount,
+    super.paymentTypeName,
   });
 
   factory OrderResponseModel.fromJson(Map<String, dynamic> json) {
@@ -85,6 +143,13 @@ final class OrderResponseModel extends OrderEntity {
           .whereType<Map<String, dynamic>>()
           .map(OrderItemResponseModel.fromJson)
           .toList(),
+      shippingAddress: _parseShipping(
+        json['shippingAddress'] ?? json['shipping_address'],
+      ),
+      finalAmount: _parseMoney(json['finalAmount'] ?? json['final_amount']),
+      paymentTypeName: _optionalTrimmedString(
+        json['paymentTypeName'] ?? json['payment_type_name'],
+      ),
     );
   }
 }
@@ -95,21 +160,36 @@ final class OrderItemResponseModel extends OrderItemEntity {
     required super.productId,
     required super.name,
     required super.stockCode,
+    required super.barcode,
     required super.quantity,
     required super.unitPrice,
     required super.imageUrl,
   });
 
   factory OrderItemResponseModel.fromJson(Map<String, dynamic> json) {
+    var productId =
+        (json['productId'] as num? ?? json['product_id'] as num? ?? 0).toInt();
+    final nested = json['product'];
+    if (nested is Map<String, dynamic>) {
+      final nid = nested['id'];
+      if (nid is num) {
+        productId = nid.toInt();
+      }
+    }
+
+    final barcodeRaw =
+        (json['productBarcode'] ?? json['barcode'] ?? '').toString().trim();
+
     return OrderItemResponseModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      productId: (json['productId'] as num? ?? json['product_id'] as num? ?? 0)
-          .toInt(),
-      name: (json['name'] ?? json['productName'] ?? '-') as String,
-      stockCode: (json['stockCode'] ?? json['sku'] ?? json['productSku'] ?? '-')
-          .toString(),
+      productId: productId,
+      name: (json['productName'] ?? json['name'] ?? '-').toString(),
+      stockCode:
+          (json['productSku'] ?? json['stockCode'] ?? json['sku'] ?? '-')
+              .toString(),
+      barcode: barcodeRaw.isEmpty ? '-' : barcodeRaw,
       quantity:
-          (json['quantity'] as num? ?? json['productQuantity'] as num? ?? 1)
+          (json['productQuantity'] as num? ?? json['quantity'] as num? ?? 1)
               .toDouble(),
       unitPrice:
           (json['unitPrice'] as num? ?? json['productPrice'] as num? ?? 0)

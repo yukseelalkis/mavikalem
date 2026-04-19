@@ -1,4 +1,5 @@
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
+import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
 
 class OrderEntity {
   const OrderEntity({
@@ -8,6 +9,9 @@ class OrderEntity {
     required this.status,
     required this.createdAt,
     required this.items,
+    this.shippingAddress,
+    this.finalAmount,
+    this.paymentTypeName,
   });
 
   final int id;
@@ -16,4 +20,8 @@ class OrderEntity {
   final String status;
   final DateTime? createdAt;
   final List<OrderItemEntity> items;
+
+  final ShippingAddressEntity? shippingAddress;
+  final double? finalAmount;
+  final String? paymentTypeName;
 }

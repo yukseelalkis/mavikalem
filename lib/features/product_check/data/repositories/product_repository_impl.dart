@@ -16,4 +16,9 @@ final class ProductRepositoryImpl implements ProductRepository {
   Future<List<ProductBriefEntity>> findByStockCode(String stockCode) {
     return _remoteDataSource.fetchByStockCode(stockCode);
   }
+
+  @override
+  Future<ProductBriefEntity> getById(int productId) {
+    return _remoteDataSource.fetchById(productId);
+  }
 }

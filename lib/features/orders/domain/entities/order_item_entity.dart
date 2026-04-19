@@ -4,6 +4,7 @@ class OrderItemEntity {
     required this.productId,
     required this.name,
     required this.stockCode,
+    required this.barcode,
     required this.quantity,
     required this.unitPrice,
     required this.imageUrl,
@@ -13,6 +14,9 @@ class OrderItemEntity {
   final int productId;
   final String name;
   final String stockCode;
+
+  /// Urun barkodu (productBarcode)
+  final String barcode;
   final double quantity;
   final double unitPrice;
   final String imageUrl;
