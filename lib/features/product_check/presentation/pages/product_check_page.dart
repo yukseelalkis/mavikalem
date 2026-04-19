@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,7 +18,10 @@ final class ProductCheckPage extends ConsumerStatefulWidget {
 final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
   final TextEditingController _queryController = TextEditingController();
   bool _isScannerVisible = false;
-  String _lastScanned = '';
+
+  /// Acik kamera oturumunda ilk gecerli okuma islendiyse true (cift tetik / cift istek onlemi).
+  bool _scanLocked = false;
+
   /// En az bir arama/kamera okumasi yapildi mi (bos sonuc mesaji icin).
   bool _lookupAttempted = false;
 
@@ -67,18 +72,14 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _isScannerVisible = !_isScannerVisible;
-                      });
-                    },
+                    onPressed: _toggleScanner,
                     icon: Icon(
                       _isScannerVisible
                           ? Icons.visibility_off
                           : Icons.qr_code_scanner,
                     ),
                     label: Text(
-                      _isScannerVisible ? 'Kamerayi Kapat' : 'Barkod Oku',
+                      _isScannerVisible ? 'Kamerayi Kapat' : 'Kamera Ac',
                     ),
                   ),
                 ),
@@ -96,15 +97,7 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                     MobileScanner(
                       controller: scannerController,
                       onDetect: (capture) {
-                        final code = capture.barcodes.isEmpty
-                            ? ''
-                            : (capture.barcodes.first.rawValue ?? '');
-                        if (code.isEmpty || code == _lastScanned) return;
-                        _lastScanned = code;
-                        setState(() => _lookupAttempted = true);
-                        ref
-                            .read(productLookupProvider.notifier)
-                            .searchByQuery(code);
+                        unawaited(_onBarcodeDetected(capture));
                       },
                     ),
                     const ScannerOverlay(),
@@ -125,8 +118,9 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                         padding: EdgeInsets.all(24),
                         child: Text(
                           'Stok kodu veya barkod yazip Ara\'ya basin; '
-                          'isterseniz asagidan barkod okutun. '
-                          'Sistem her iki alanda da ayni metni arar.',
+                          'veya Kamera Ac ile tek seferlik okutun '
+                          '(okuma sonrasi kamera kapanir). '
+                          'Sistem once stok kodunu, sonra barkodu arar.',
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -186,6 +180,51 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
     if (query.isEmpty) return;
     setState(() => _lookupAttempted = true);
     ref.read(productLookupProvider.notifier).searchByQuery(query);
+  }
+
+  Future<void> _toggleScanner() async {
+    final controller = ref.read(scannerControllerProvider);
+
+    if (_isScannerVisible) {
+      await controller.stop();
+      if (!mounted) return;
+      setState(() {
+        _isScannerVisible = false;
+        _scanLocked = false;
+      });
+      return;
+    }
+
+    _scanLocked = false;
+    setState(() => _isScannerVisible = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await controller.start();
+    });
+  }
+
+  Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
+    if (_scanLocked) return;
+
+    final raw = capture.barcodes.isEmpty
+        ? ''
+        : (capture.barcodes.first.rawValue ?? '');
+    final code = raw.trim();
+    if (code.isEmpty) return;
+
+    _scanLocked = true;
+
+    final controller = ref.read(scannerControllerProvider);
+    await controller.stop();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isScannerVisible = false;
+      _queryController.text = code;
+      _lookupAttempted = true;
+    });
+
+    ref.read(productLookupProvider.notifier).searchByQuery(code);
   }
 }
 
