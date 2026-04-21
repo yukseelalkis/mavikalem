@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
+import 'package:mavikalem_app/features/product_check/presentation/constants/stock_thresholds.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
 import 'package:mavikalem_app/features/product_check/presentation/widgets/scanner_overlay.dart';
 
@@ -107,57 +108,44 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
             ),
           Expanded(
             child: lookupAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) =>
-                  Center(child: Text('Urun aranirken hata: $error')),
+              loading: () => _ProductCheckStateCard(
+                icon: Icons.hourglass_top_rounded,
+                title: 'Urun araniyor',
+                body:
+                    'Baglanti kuruluyor; stok kodu ve barkod sorgusu '
+                    'sirasiyla yapiliyor.',
+                showProgress: true,
+              ),
+              error: (error, _) => _ProductCheckStateCard(
+                icon: Icons.cloud_off_rounded,
+                title: 'Arama yapilamadi',
+                body:
+                    'Bir seyler ters gitti. Internet baglantinizi kontrol edin '
+                    'veya biraz sonra tekrar deneyin.\n\n'
+                    'Detay: $error',
+                onRetry: _retryLookup,
+              ),
               data: (products) {
                 if (products.isEmpty) {
                   if (!_lookupAttempted) {
-                    return const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Stok kodu veya barkod yazip Ara\'ya basin; '
+                    return _ProductCheckStateCard(
+                      icon: Icons.qr_code_scanner_rounded,
+                      title: 'Nasil kullanilir?',
+                      body:
+                          'Stok kodu veya barkodu yazip Ara\'ya basin; '
                           'veya Kamera Ac ile tek seferlik okutun '
                           '(okuma sonrasi kamera kapanir). '
                           'Sistem once stok kodunu, sonra barkodu arar.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
                     );
                   }
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search_off_rounded,
-                            size: 56,
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Urun bulunamadi',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Girdiginiz deger stok kodu veya barkod ile '
-                            'eslesen bir urun bulunamadi.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  return _ProductCheckStateCard(
+                    icon: Icons.search_off_rounded,
+                    title: 'Urun bulunamadi',
+                    body:
+                        'Girdiginiz deger stok kodu veya barkod ile '
+                        'eslesen bir urun bulunamadi. Kodu kontrol edip '
+                        'yeniden arayabilirsiniz.',
+                    onRetry: _retryLookup,
                   );
                 }
                 return ListView.separated(
@@ -180,6 +168,19 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
     if (query.isEmpty) return;
     setState(() => _lookupAttempted = true);
     ref.read(productLookupProvider.notifier).searchByQuery(query);
+  }
+
+  void _retryLookup() {
+    final q = _queryController.text.trim();
+    ref.invalidate(productLookupProvider);
+    if (q.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(productLookupProvider.notifier).searchByQuery(q);
+      });
+    } else {
+      setState(() => _lookupAttempted = false);
+    }
   }
 
   Future<void> _toggleScanner() async {
@@ -225,6 +226,134 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
     });
 
     ref.read(productLookupProvider.notifier).searchByQuery(code);
+  }
+}
+
+final class _ProductCheckStateCard extends StatelessWidget {
+  const _ProductCheckStateCard({
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.showProgress = false,
+    this.onRetry,
+  });
+
+  final IconData icon;
+  final String title;
+  final String body;
+  final bool showProgress;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Card(
+          elevation: 0,
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showProgress)
+                  SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: scheme.primary,
+                    ),
+                  )
+                else
+                  Icon(icon, size: 52, color: scheme.primary),
+                const SizedBox(height: 18),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  body,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
+                ),
+                if (onRetry != null) ...[
+                  const SizedBox(height: 20),
+                  FilledButton.tonalIcon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Tekrar dene'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+final class _StockStatusRow extends StatelessWidget {
+  const _StockStatusRow({required this.stockAmount});
+
+  final double stockAmount;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    late final String label;
+    late final IconData icon;
+    late final Color color;
+
+    if (stockAmount <= 0) {
+      label = 'Stokta yok';
+      icon = Icons.remove_shopping_cart_outlined;
+      color = scheme.error;
+    } else if (stockAmount <= StockThresholds.lowStockMax) {
+      label = 'Dusuk stok';
+      icon = Icons.warning_amber_rounded;
+      color = scheme.tertiary;
+    } else {
+      label = 'Stokta var';
+      icon = Icons.check_circle_outline_rounded;
+      color = scheme.primary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Chip(
+          avatar: Icon(icon, size: 18, color: color),
+          label: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          side: BorderSide(color: color.withValues(alpha: 0.35)),
+          backgroundColor: color.withValues(alpha: 0.1),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
   }
 }
 
@@ -334,7 +463,16 @@ final class _ProductResultCard extends StatelessWidget {
                     height: 1.25,
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
+                _StockStatusRow(stockAmount: product.stockAmount),
+                _InfoLine(
+                  icon: Icons.payments_outlined,
+                  label: 'Liste fiyati',
+                  value: product.price == null
+                      ? '-'
+                      : '${product.price!.toStringAsFixed(2)} TL',
+                ),
+                const SizedBox(height: 8),
                 _InfoLine(
                   icon: Icons.numbers_rounded,
                   label: 'Stok kodu',

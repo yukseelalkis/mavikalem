@@ -8,6 +8,7 @@ final class ProductBriefModel extends ProductBriefEntity {
     required super.barcode,
     required super.imageUrl,
     required super.stockAmount,
+    super.price,
   });
 
   factory ProductBriefModel.fromJson(Map<String, dynamic> json) {
@@ -66,6 +67,12 @@ final class ProductBriefModel extends ProductBriefEntity {
             : null) ??
         0;
 
+    final priceNum =
+        _readNum(json, const ['price1', 'price', 'listPrice']) ??
+        (nestedMap != null
+            ? _readNum(nestedMap, const ['price1', 'price', 'listPrice'])
+            : null);
+
     return ProductBriefModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
       name:
@@ -75,6 +82,7 @@ final class ProductBriefModel extends ProductBriefEntity {
       barcode: barOut,
       imageUrl: imageUrl,
       stockAmount: stockAmt.toDouble(),
+      price: priceNum?.toDouble(),
     );
   }
 

@@ -6,6 +6,7 @@ class ProductBriefEntity {
     required this.barcode,
     required this.imageUrl,
     required this.stockAmount,
+    this.price,
   });
 
   final int id;
@@ -14,4 +15,7 @@ class ProductBriefEntity {
   final String barcode;
   final String imageUrl;
   final double stockAmount;
+
+  /// Liste fiyati (IdeaSoft `price1`); API yoksa null.
+  final double? price;
 }
