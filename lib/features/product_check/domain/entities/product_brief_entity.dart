@@ -7,6 +7,7 @@ class ProductBriefEntity {
     required this.imageUrl,
     required this.stockAmount,
     this.price,
+    this.deliveryTypeRaw,
   });
 
   final int id;
@@ -18,4 +19,5 @@ class ProductBriefEntity {
 
   /// Liste fiyati (IdeaSoft `price1`); API yoksa null.
   final double? price;
+  final String? deliveryTypeRaw;
 }

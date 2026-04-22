@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:mavikalem_app/core/widgets/delivery_type_badge.dart';
 import 'package:mavikalem_app/features/auth/presentation/providers/auth_providers.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/order_status_bucket.dart';
@@ -92,8 +93,9 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
                         selected: _statusFilter == bucket,
                         onSelected: (selected) {
                           setState(() {
-                            _statusFilter =
-                                selected ? bucket : OrderStatusBucket.all;
+                            _statusFilter = selected
+                                ? bucket
+                                : OrderStatusBucket.all;
                           });
                         },
                       ),
@@ -186,6 +188,11 @@ final class _OrderTile extends StatelessWidget {
             '${order.items.length} urun • $createdAtText',
             style: theme.textTheme.bodyMedium,
           ),
+          const SizedBox(height: 6),
+          DeliveryTypeBadge(
+            rawValue: order.deliveryTypeRaw,
+            unknownLabel: 'Teslimat Bilgisi Yok',
+          ),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,20 +235,20 @@ final class _OrderStatusChip extends StatelessWidget {
   final OrderStatusBucket bucket;
 
   Color _background(ColorScheme scheme) => switch (bucket) {
-        OrderStatusBucket.all => scheme.surfaceContainerHighest,
-        OrderStatusBucket.yeni => scheme.primaryContainer,
-        OrderStatusBucket.hazirlaniyor => scheme.tertiaryContainer,
-        OrderStatusBucket.tamamlandi => scheme.secondaryContainer,
-        OrderStatusBucket.diger => scheme.surfaceContainerHighest,
-      };
+    OrderStatusBucket.all => scheme.surfaceContainerHighest,
+    OrderStatusBucket.yeni => scheme.primaryContainer,
+    OrderStatusBucket.hazirlaniyor => scheme.tertiaryContainer,
+    OrderStatusBucket.tamamlandi => scheme.secondaryContainer,
+    OrderStatusBucket.diger => scheme.surfaceContainerHighest,
+  };
 
   Color _foreground(ColorScheme scheme) => switch (bucket) {
-        OrderStatusBucket.all => scheme.onSurfaceVariant,
-        OrderStatusBucket.yeni => scheme.onPrimaryContainer,
-        OrderStatusBucket.hazirlaniyor => scheme.onTertiaryContainer,
-        OrderStatusBucket.tamamlandi => scheme.onSecondaryContainer,
-        OrderStatusBucket.diger => scheme.onSurfaceVariant,
-      };
+    OrderStatusBucket.all => scheme.onSurfaceVariant,
+    OrderStatusBucket.yeni => scheme.onPrimaryContainer,
+    OrderStatusBucket.hazirlaniyor => scheme.onTertiaryContainer,
+    OrderStatusBucket.tamamlandi => scheme.onSecondaryContainer,
+    OrderStatusBucket.diger => scheme.onSurfaceVariant,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -258,9 +265,7 @@ final class _OrderStatusChip extends StatelessWidget {
         ),
       ),
       backgroundColor: _background(scheme),
-      side: BorderSide(
-        color: scheme.outlineVariant.withValues(alpha: 0.4),
-      ),
+      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       padding: const EdgeInsets.symmetric(horizontal: 2),
     );
   }

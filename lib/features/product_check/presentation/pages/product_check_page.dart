@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:mavikalem_app/core/widgets/delivery_type_badge.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 import 'package:mavikalem_app/features/product_check/presentation/constants/stock_thresholds.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
@@ -50,8 +51,7 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
                     controller: _queryController,
                     decoration: const InputDecoration(
                       labelText: 'Stok kodu veya barkod',
-                      hintText:
-                          'Ayni kutuya yazin; sistem ikisinde de arar',
+                      hintText: 'Ayni kutuya yazin; sistem ikisinde de arar',
                       border: OutlineInputBorder(),
                     ),
                     keyboardType: TextInputType.text,
@@ -396,9 +396,10 @@ final class _ProductResultCard extends StatelessWidget {
                           CachedNetworkImage(
                             imageUrl: product.imageUrl,
                             fit: BoxFit.contain,
-                            memCacheWidth: (MediaQuery.sizeOf(context).width *
-                                    MediaQuery.of(context).devicePixelRatio)
-                                .round(),
+                            memCacheWidth:
+                                (MediaQuery.sizeOf(context).width *
+                                        MediaQuery.of(context).devicePixelRatio)
+                                    .round(),
                             placeholder: (_, __) => const Center(
                               child: CircularProgressIndicator(),
                             ),
@@ -415,8 +416,9 @@ final class _ProductResultCard extends StatelessWidget {
                             bottom: 8,
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                color: theme.colorScheme.surface
-                                    .withValues(alpha: 0.92),
+                                color: theme.colorScheme.surface.withValues(
+                                  alpha: 0.92,
+                                ),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Padding(
@@ -435,11 +437,11 @@ final class _ProductResultCard extends StatelessWidget {
                                     const SizedBox(width: 4),
                                     Text(
                                       'Buyut',
-                                      style:
-                                          theme.textTheme.labelMedium?.copyWith(
-                                        color: theme.colorScheme.primary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
+                                      style: theme.textTheme.labelMedium
+                                          ?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -463,6 +465,8 @@ final class _ProductResultCard extends StatelessWidget {
                     height: 1.25,
                   ),
                 ),
+                const SizedBox(height: 10),
+                DeliveryTypeBadge(rawValue: product.deliveryTypeRaw),
                 const SizedBox(height: 10),
                 _StockStatusRow(stockAmount: product.stockAmount),
                 _InfoLine(
@@ -540,9 +544,9 @@ final class _ProductResultCard extends StatelessWidget {
                 child: Text(
                   'Parmakla yaklastir / uzaklastir',
                   textAlign: TextAlign.center,
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Colors.white70,
-                      ),
+                  style: Theme.of(
+                    ctx,
+                  ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                 ),
               ),
             ],
@@ -569,14 +573,13 @@ final class _InfoLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final valueStyle =
-        emphasize
-            ? theme.textTheme.titleMedium?.copyWith(
-              fontFamily: 'monospace',
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            )
-            : theme.textTheme.bodyLarge;
+    final valueStyle = emphasize
+        ? theme.textTheme.titleMedium?.copyWith(
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          )
+        : theme.textTheme.bodyLarge;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,

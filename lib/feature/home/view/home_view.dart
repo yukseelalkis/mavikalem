@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mavikalem_app/core/widgets/delivery_type_badge.dart';
 import 'package:mavikalem_app/product/model/category_model.dart';
 import 'package:mavikalem_app/product/model/product_model.dart';
 import 'package:mavikalem_app/product/service/service.dart';
@@ -281,6 +282,14 @@ class _ProductCard extends StatelessWidget {
           Text(
             "${product.price.toStringAsFixed(2)} TL",
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: DeliveryTypeBadge(
+              rawValue: product.deliveryTypeRaw,
+              alignment: Alignment.center,
+            ),
           ),
           const SizedBox(height: 12),
           Container(

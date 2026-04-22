@@ -1,3 +1,4 @@
+import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
@@ -70,13 +71,16 @@ ShippingAddressEntity? _parseShipping(dynamic raw) {
   final ln = (json['lastname'] ?? json['lastName'] ?? '').toString().trim();
   var full = '$fn $ln'.trim();
   if (full.isEmpty) {
-    full = _optionalTrimmedString(
+    full =
+        _optionalTrimmedString(
           json['fullName'] ?? json['customerName'] ?? json['name'],
         ) ??
         '';
   }
   final phone =
-      _optionalTrimmedString(json['phone'] ?? json['mobilePhone'] ?? json['gsm']) ??
+      _optionalTrimmedString(
+        json['phone'] ?? json['mobilePhone'] ?? json['gsm'],
+      ) ??
       '';
   final address =
       _optionalTrimmedString(
@@ -115,6 +119,7 @@ final class OrderResponseModel extends OrderEntity {
     super.shippingAddress,
     super.finalAmount,
     super.paymentTypeName,
+    super.deliveryTypeRaw,
   });
 
   factory OrderResponseModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +155,7 @@ final class OrderResponseModel extends OrderEntity {
       paymentTypeName: _optionalTrimmedString(
         json['paymentTypeName'] ?? json['payment_type_name'],
       ),
+      deliveryTypeRaw: extractOrderDeliveryTypeRaw(json),
     );
   }
 }
@@ -177,16 +183,16 @@ final class OrderItemResponseModel extends OrderItemEntity {
       }
     }
 
-    final barcodeRaw =
-        (json['productBarcode'] ?? json['barcode'] ?? '').toString().trim();
+    final barcodeRaw = (json['productBarcode'] ?? json['barcode'] ?? '')
+        .toString()
+        .trim();
 
     return OrderItemResponseModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
       productId: productId,
       name: (json['productName'] ?? json['name'] ?? '-').toString(),
-      stockCode:
-          (json['productSku'] ?? json['stockCode'] ?? json['sku'] ?? '-')
-              .toString(),
+      stockCode: (json['productSku'] ?? json['stockCode'] ?? json['sku'] ?? '-')
+          .toString(),
       barcode: barcodeRaw.isEmpty ? '-' : barcodeRaw,
       quantity:
           (json['productQuantity'] as num? ?? json['quantity'] as num? ?? 1)
