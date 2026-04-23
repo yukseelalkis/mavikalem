@@ -82,4 +82,9 @@ final class ProductLookupController
       return ref.read(findProductByBarcodeProvider)(query);
     });
   }
+
+  /// Kullanıcı birden fazla varyant arasından seçim yaptığında listeyi tek ürüne indirir.
+  void selectSingleProduct(ProductBriefEntity product) {
+    state = AsyncData(<ProductBriefEntity>[product]);
+  }
 }

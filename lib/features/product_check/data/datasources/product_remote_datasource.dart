@@ -10,6 +10,14 @@ final class ProductRemoteDataSource {
 
   static const int _searchLimit = 20;
 
+  /// IdeaSoft `q[barcode_cont]` her zaman mevcut olmayabilir; cevap boşsa
+  /// `q[barcode_start]` da denenir. Varyant köklü barkodları bulmak için
+  /// kullanılır; döndürülen listede [BarcodePrefixMatcher] ile süzme yapılır.
+  static const List<String> _candidateQueryKeys = <String>[
+    'q[barcode_cont]',
+    'q[barcode_start]',
+  ];
+
   /// GET /api/products?q[barcode]={query}
   Future<List<ProductBriefModel>> fetchByBarcode(String barcode) async {
     final response = await _dio.get<dynamic>(
@@ -20,6 +28,33 @@ final class ProductRemoteDataSource {
       },
     );
     return _parse(response.data);
+  }
+
+  /// Varyantlı barkodları yakalamak için geniş arama: önce `barcode_cont`,
+  /// boşsa `barcode_start` denenir.
+  Future<List<ProductBriefModel>> fetchByBarcodeCandidates(
+    String barcodePrefix,
+  ) async {
+    final trimmed = barcodePrefix.trim();
+    if (trimmed.isEmpty) return const <ProductBriefModel>[];
+
+    for (final key in _candidateQueryKeys) {
+      try {
+        final response = await _dio.get<dynamic>(
+          ApiEndpoints.products,
+          queryParameters: <String, dynamic>{
+            key: trimmed,
+            'limit': _searchLimit,
+          },
+        );
+        final parsed = _parse(response.data);
+        if (parsed.isNotEmpty) return parsed;
+      } on DioException {
+        // parametre desteklenmeyebilir; bir sonraki anahtarı dene
+        continue;
+      }
+    }
+    return const <ProductBriefModel>[];
   }
 
   /// GET /api/products?sku={query}

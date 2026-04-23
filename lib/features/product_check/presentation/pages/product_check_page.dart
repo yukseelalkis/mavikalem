@@ -27,6 +27,9 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
   /// En az bir arama/kamera okumasi yapildi mi (bos sonuc mesaji icin).
   bool _lookupAttempted = false;
 
+  /// Aynı arama sonucu için tekrar tekrar bottom sheet açılmasın diye açılan liste.
+  List<int>? _variantSheetSignature;
+
   @override
   void dispose() {
     _queryController.dispose();
@@ -35,6 +38,26 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<List<ProductBriefEntity>>>(productLookupProvider, (
+      previous,
+      next,
+    ) {
+      next.whenOrNull(
+        data: (products) {
+          if (products.isEmpty) {
+            if (_lookupAttempted) _showNotFoundSnackBar();
+            _variantSheetSignature = null;
+            return;
+          }
+          if (products.length > 1) {
+            _maybeShowVariantSheet(products);
+          } else {
+            _variantSheetSignature = null;
+          }
+        },
+      );
+    });
+
     final lookupAsync = ref.watch(productLookupProvider);
     final scannerController = ref.watch(scannerControllerProvider);
 
@@ -201,6 +224,54 @@ final class _ProductCheckPageState extends ConsumerState<ProductCheckPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await controller.start();
     });
+  }
+
+  void _showNotFoundSnackBar() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('Ürün bulunamadı'),
+        duration: Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _maybeShowVariantSheet(List<ProductBriefEntity> products) {
+    final signature = products.map((p) => p.id).toList(growable: false);
+    if (_variantSheetSignature != null &&
+        _listEquals(_variantSheetSignature!, signature)) {
+      return;
+    }
+    _variantSheetSignature = signature;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        isScrollControlled: true,
+        builder: (sheetContext) => _VariantPickerSheet(
+          products: products,
+          onSelect: (selected) {
+            Navigator.of(sheetContext).pop();
+            ref
+                .read(productLookupProvider.notifier)
+                .selectSingleProduct(selected);
+          },
+        ),
+      );
+    });
+  }
+
+  static bool _listEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   Future<void> _onBarcodeDetected(BarcodeCapture capture) async {
@@ -602,6 +673,93 @@ final class _InfoLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+final class _VariantPickerSheet extends StatelessWidget {
+  const _VariantPickerSheet({required this.products, required this.onSelect});
+
+  final List<ProductBriefEntity> products;
+  final ValueChanged<ProductBriefEntity> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final mediaBottom = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: mediaBottom),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Varyant seçin',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Taradığınız barkod birden fazla varyanta uyuyor.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: products.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final product = products[index];
+                    final subtitle = <String>[
+                      if (product.barcode.trim().isNotEmpty)
+                        'Barkod: ${product.barcode}',
+                      if (product.stockCode.trim().isNotEmpty)
+                        'Stok: ${product.stockCode}',
+                    ].join(' • ');
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: theme.colorScheme.primaryContainer,
+                        foregroundColor: theme.colorScheme.onPrimaryContainer,
+                        child: const Icon(Icons.inventory_2_outlined),
+                      ),
+                      title: Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => onSelect(product),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
