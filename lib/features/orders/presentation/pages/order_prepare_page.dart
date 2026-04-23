@@ -2,10 +2,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
+import 'package:mavikalem_app/features/orders/domain/order_pack_matcher.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
+import 'package:mavikalem_app/features/orders/presentation/providers/pack_progress_providers.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
 
@@ -30,24 +33,353 @@ final class OrderPreparePage extends ConsumerWidget {
         ),
         data: (order) => RefreshIndicator(
           onRefresh: () => ref.refresh(orderPrepareProvider(orderId).future),
-          child: _OrderDetailScrollView(order: order),
+          child: _OrderPrepareBody(order: order),
         ),
       ),
     );
   }
 }
 
-final class _OrderDetailScrollView extends StatelessWidget {
-  const _OrderDetailScrollView({required this.order});
+final class _OrderPrepareBody extends ConsumerStatefulWidget {
+  const _OrderPrepareBody({required this.order});
 
   final OrderEntity order;
 
   @override
+  ConsumerState<_OrderPrepareBody> createState() => _OrderPrepareBodyState();
+}
+
+final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
+  bool _packMode = false;
+  final TextEditingController _scanController = TextEditingController();
+
+  @override
+  void dispose() {
+    _scanController.dispose();
+    super.dispose();
+  }
+
+  double _lineTotal(OrderItemEntity item) => item.quantity * item.unitPrice;
+
+  double _linesSum(List<OrderItemEntity> items) =>
+      items.fold<double>(0, (a, i) => a + _lineTotal(i));
+
+  double _packProgressValue(Map<int, double> scanned, List<OrderItemEntity> items) {
+    if (items.isEmpty) return 0;
+    double num = 0;
+    double den = 0;
+    for (final i in items) {
+      den += i.quantity;
+      num += (scanned[i.id] ?? 0).clamp(0, i.quantity);
+    }
+    return den <= 0 ? 0 : (num / den).clamp(0, 1);
+  }
+
+  int _completedLineCount(Map<int, double> scanned, List<OrderItemEntity> items) {
+    var c = 0;
+    for (final i in items) {
+      if ((scanned[i.id] ?? 0) >= i.quantity) c++;
+    }
+    return c;
+  }
+
+  String _packLineLabel(OrderItemEntity item, double scanned) {
+    if (scanned <= 0) return 'Bekliyor';
+    if (scanned < item.quantity) return 'Eksik';
+    if (scanned > item.quantity) return 'Fazla';
+    return 'Tamam';
+  }
+
+  Color _packLineColor(BuildContext context, OrderItemEntity item, double scanned) {
+    final scheme = Theme.of(context).colorScheme;
+    if (scanned <= 0) return scheme.outline;
+    if (scanned < item.quantity) return scheme.tertiary;
+    if (scanned > item.quantity) return scheme.error;
+    return scheme.primary;
+  }
+
+  Future<void> _applyScan(String raw) async {
+    final scan = OrderPackMatcher.normalizeScanInput(raw);
+    if (scan.isEmpty) return;
+
+    final items = widget.order.items;
+    // Yalnizca bu siparis kalemleriyle eslesir; sipariste yoksa hicbir satira eklenmez.
+    var matches = OrderPackMatcher.matchingLinesForOrderPack(scan, items);
+    final allowedLineIds = items.map((e) => e.id).toSet();
+    matches = matches.where((m) => allowedLineIds.contains(m.id)).toList();
+
+    final notifier = ref.read(packProgressProvider(widget.order.id).notifier);
+
+    if (matches.isEmpty) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          content: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.remove_circle_outline,
+                color: Theme.of(context).colorScheme.onInverseSurface,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Bu urun bu siparis listesinde yok. '
+                  'Sadece sipariste yer alan barkod / stok kodlari sayilir.',
+                  style: TextStyle(
+                    height: 1.25,
+                    color: Theme.of(context).colorScheme.onInverseSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (matches.length == 1) {
+      await notifier.incrementLine(matches.first.id, 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Eklendi: ${matches.first.name}')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<OrderItemEntity>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.5;
+        return SafeArea(
+          child: SizedBox(
+            height: maxH,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Birden fazla urun eslesti',
+                    style: Theme.of(ctx).textTheme.titleMedium,
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: matches.length,
+                    itemBuilder: (context, index) {
+                      final m = matches[index];
+                      return ListTile(
+                        title: Text(
+                          m.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          'Barkod: ${m.barcode}\nStok: ${m.stockCode}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        isThreeLine: true,
+                        onTap: () => Navigator.of(ctx).pop(m),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (picked != null) {
+      await notifier.incrementLine(picked.id, 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Eklendi: ${picked.name}')),
+      );
+    }
+  }
+
+  Future<void> _openPackScanner() async {
+    final controller = MobileScannerController(
+      detectionSpeed: DetectionSpeed.noDuplicates,
+      returnImage: false,
+    );
+    var locked = false;
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.paddingOf(ctx).bottom,
+          ),
+          child: SizedBox(
+            height: 320,
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Barkod okut'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
+                ),
+                Expanded(
+                  child: MobileScanner(
+                    controller: controller,
+                    onDetect: (capture) async {
+                      if (locked) return;
+                      final raw = capture.barcodes.isEmpty
+                          ? ''
+                          : (capture.barcodes.first.rawValue ?? '');
+                      final code = raw.trim();
+                      if (code.isEmpty) return;
+                      locked = true;
+                      await controller.stop();
+                      if (ctx.mounted) Navigator.of(ctx).pop();
+                      _scanController.text = code;
+                      await _applyScan(code);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    await controller.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
+    final scanned = ref.watch(packProgressProvider(order.id));
+    final theme = Theme.of(context);
+
+    final linesSum = _linesSum(order.items);
+    final finalAmt = order.finalAmount;
+    final mismatch = finalAmt != null && (linesSum - finalAmt).abs() > 0.01;
+
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
-        SliverToBoxAdapter(child: _OrderSummaryCard(order: order)),
+        SliverToBoxAdapter(
+          child: _OrderSummaryCard(
+            order: order,
+            linesSum: linesSum,
+            linesMismatch: mismatch,
+          ),
+        ),
+        if (order.items.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Card(
+                elevation: 0,
+                color: theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.5,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Toplama modu',
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          Switch(
+                            value: _packMode,
+                            onChanged: (v) => setState(() => _packMode = v),
+                          ),
+                        ],
+                      ),
+                      if (_packMode) ...[
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                            value: _packProgressValue(scanned, order.items),
+                            minHeight: 8,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Satir: ${_completedLineCount(scanned, order.items)} / ${order.items.length}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                        if (_completedLineCount(scanned, order.items) ==
+                                order.items.length &&
+                            order.items.isNotEmpty &&
+                            order.items.every(
+                              (i) => (scanned[i.id] ?? 0) >= i.quantity,
+                            ))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'Tum kalemler tamam (beklenen adet).',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _scanController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Barkod / stok kodu',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: _applyScan,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              onPressed: () => _applyScan(_scanController.text),
+                              child: const Text('Ekle'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: _openPackScanner,
+                          icon: const Icon(Icons.qr_code_scanner),
+                          label: const Text('Kamera ile okut'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (order.items.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
@@ -60,17 +392,24 @@ final class _OrderDetailScrollView extends StatelessWidget {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final item = order.items[index];
+                  final s = scanned[item.id] ?? 0;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: _OrderLineCard(item: item),
+                    child: _OrderLineCard(
+                      orderId: order.id,
+                      item: item,
+                      packMode: _packMode,
+                      scannedCount: s,
+                      packStatusLabel: _packLineLabel(item, s),
+                      packStatusColor: _packLineColor(context, item, s),
+                    ),
                   );
                 },
                 childCount: order.items.length,
               ),
             ),
           ),
-        if (order.shippingAddress != null &&
-            !order.shippingAddress!.isEmpty)
+        if (order.shippingAddress != null && !order.shippingAddress!.isEmpty)
           SliverToBoxAdapter(
             child: _ShippingCard(address: order.shippingAddress!),
           ),
@@ -81,15 +420,23 @@ final class _OrderDetailScrollView extends StatelessWidget {
 }
 
 final class _OrderSummaryCard extends StatelessWidget {
-  const _OrderSummaryCard({required this.order});
+  const _OrderSummaryCard({
+    required this.order,
+    required this.linesSum,
+    required this.linesMismatch,
+  });
 
   final OrderEntity order;
+  final double linesSum;
+  final bool linesMismatch;
+
+  static String _money(double v) => '${v.toStringAsFixed(2)} TL';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final amountText = order.finalAmount != null
-        ? '${order.finalAmount!.toStringAsFixed(2)} TL'
+        ? _money(order.finalAmount!)
         : '-';
     final payment = order.paymentTypeName ?? '-';
 
@@ -125,6 +472,36 @@ final class _OrderSummaryCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Kalemler toplami',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Text(
+                  _money(linesSum),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if (linesMismatch)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Kalemler toplami ile siparis tutari farkli; iade veya indirim kontrol edin.',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
             Text(
               'Odeme tipi',
               style: theme.textTheme.labelLarge?.copyWith(
@@ -141,9 +518,23 @@ final class _OrderSummaryCard extends StatelessWidget {
 }
 
 final class _OrderLineCard extends ConsumerWidget {
-  const _OrderLineCard({required this.item});
+  const _OrderLineCard({
+    required this.orderId,
+    required this.item,
+    required this.packMode,
+    required this.scannedCount,
+    required this.packStatusLabel,
+    required this.packStatusColor,
+  });
 
+  final int orderId;
   final OrderItemEntity item;
+  final bool packMode;
+  final double scannedCount;
+  final String packStatusLabel;
+  final Color packStatusColor;
+
+  static String _money(double v) => '${v.toStringAsFixed(2)} TL';
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -151,6 +542,10 @@ final class _OrderLineCard extends ConsumerWidget {
     final qtyText = item.quantity % 1 == 0
         ? item.quantity.toInt().toString()
         : item.quantity.toStringAsFixed(2);
+    final lineTotal = item.quantity * item.unitPrice;
+    final scannedText = scannedCount % 1 == 0
+        ? scannedCount.toInt().toString()
+        : scannedCount.toStringAsFixed(2);
 
     return Card(
       elevation: 1,
@@ -172,6 +567,17 @@ final class _OrderLineCard extends ConsumerWidget {
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                       height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Birim fiyat: ${_money(item.unitPrice)}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  Text(
+                    'Kalem toplami: ${_money(lineTotal)} ($qtyText x ${_money(item.unitPrice)})',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -219,6 +625,66 @@ final class _OrderLineCard extends ConsumerWidget {
                       ],
                     ),
                   ),
+                  if (packMode) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: packStatusColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: packStatusColor),
+                          ),
+                          child: Text(
+                            packStatusLabel,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: packStatusColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          'Okutulan: $scannedText',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        IconButton.filledTonal(
+                          tooltip: 'Azalt',
+                          onPressed: scannedCount > 0
+                              ? () => ref
+                                  .read(packProgressProvider(orderId).notifier)
+                                  .incrementLine(item.id, -1)
+                              : null,
+                          icon: const Icon(Icons.remove),
+                        ),
+                        IconButton.filled(
+                          tooltip: 'Arttir',
+                          onPressed: () => ref
+                              .read(packProgressProvider(orderId).notifier)
+                              .incrementLine(item.id, 1),
+                          icon: const Icon(Icons.add),
+                        ),
+                        const SizedBox(width: 8),
+                        if (scannedCount >= item.quantity)
+                          Icon(
+                            Icons.check_circle,
+                            color: theme.colorScheme.primary,
+                            size: 28,
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

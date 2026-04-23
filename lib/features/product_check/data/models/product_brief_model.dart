@@ -1,3 +1,4 @@
+import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 
 final class ProductBriefModel extends ProductBriefEntity {
@@ -8,12 +9,13 @@ final class ProductBriefModel extends ProductBriefEntity {
     required super.barcode,
     required super.imageUrls,
     required super.stockAmount,
+    super.price,
+    super.deliveryTypeRaw,
   });
 
   factory ProductBriefModel.fromJson(Map<String, dynamic> json) {
     final nested = json['product'];
-    final nestedMap =
-        nested is Map<String, dynamic> ? nested : null;
+    final nestedMap = nested is Map<String, dynamic> ? nested : null;
 
     var stock = _firstNonEmptyString(json, const [
       'sku',
@@ -62,15 +64,23 @@ final class ProductBriefModel extends ProductBriefEntity {
       urls = _collectImageUrls(nestedMap);
     }
 
+    final priceNum =
+        _readNum(json, const ['price1', 'price', 'listPrice']) ??
+        (nestedMap != null
+            ? _readNum(nestedMap, const ['price1', 'price', 'listPrice'])
+            : null);
+    final deliveryTypeRaw = extractDeliveryTypeRaw(json, nestedMap: nestedMap);
+
     return ProductBriefModel(
       id: (json['id'] as num?)?.toInt() ?? 0,
-      name:
-          (json['name'] ?? json['productName'] ?? json['title'] ?? '-')
-              .toString(),
+      name: (json['name'] ?? json['productName'] ?? json['title'] ?? '-')
+          .toString(),
       stockCode: stockOut,
       barcode: barOut,
       imageUrls: urls,
       stockAmount: stockAmt.toDouble(),
+      price: priceNum?.toDouble(),
+      deliveryTypeRaw: deliveryTypeRaw,
     );
   }
 

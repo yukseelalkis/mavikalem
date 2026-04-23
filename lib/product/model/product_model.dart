@@ -1,3 +1,5 @@
+import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
+
 class ProductModel {
   final int id;
   final String name;
@@ -7,6 +9,7 @@ class ProductModel {
   final String sku;
   final double stockAmount;
   final String description; // Değişken burada tanımlı
+  final String? deliveryTypeRaw;
 
   ProductModel({
     required this.id,
@@ -17,10 +20,13 @@ class ProductModel {
     required this.sku,
     required this.stockAmount,
     required this.description, // HATA BURADAYDI: Buraya eklememiş olabilirsin
+    this.deliveryTypeRaw,
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     String imgUrl = "";
+    final nested = json['product'];
+    final nestedMap = nested is Map<String, dynamic> ? nested : null;
 
     if (json['images'] != null && (json['images'] as List).isNotEmpty) {
       final img = json['images'][0];
@@ -47,6 +53,7 @@ class ProductModel {
           json['details'] != null && (json['details'] as List).isNotEmpty
           ? json['details'][0]['details'] ?? ""
           : "",
+      deliveryTypeRaw: extractDeliveryTypeRaw(json, nestedMap: nestedMap),
     );
   }
 }

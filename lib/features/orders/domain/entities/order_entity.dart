@@ -12,6 +12,7 @@ class OrderEntity {
     this.shippingAddress,
     this.finalAmount,
     this.paymentTypeName,
+    this.deliveryTypeRaw,
   });
 
   final int id;
@@ -24,4 +25,5 @@ class OrderEntity {
   final ShippingAddressEntity? shippingAddress;
   final double? finalAmount;
   final String? paymentTypeName;
+  final String? deliveryTypeRaw;
 }

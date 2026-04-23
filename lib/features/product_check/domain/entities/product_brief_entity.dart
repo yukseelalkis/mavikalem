@@ -6,6 +6,8 @@ class ProductBriefEntity {
     required this.barcode,
     this.imageUrls = const <String>[],
     required this.stockAmount,
+    this.price,
+    this.deliveryTypeRaw,
   });
 
   final int id;
@@ -20,4 +22,8 @@ class ProductBriefEntity {
   String get imageUrl => imageUrls.isEmpty ? '' : imageUrls.first;
 
   final double stockAmount;
+
+  /// Liste fiyati (IdeaSoft `price1`); API yoksa null.
+  final double? price;
+  final String? deliveryTypeRaw;
 }

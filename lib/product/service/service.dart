@@ -1,60 +1,61 @@
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:mavikalem_app/product/model/product_model.dart';
+import 'package:mavikalem_app/core/storage/secure_storage_service.dart';
 import 'package:mavikalem_app/product/model/category_model.dart';
+import 'package:mavikalem_app/product/model/product_model.dart';
+
+Future<Map<String, String>> _authorizedJsonHeaders() async {
+  const storage = FlutterSecureStorage();
+  final token = await storage.read(key: SecureStorageService.accessTokenKey);
+  if (token == null || token.isEmpty) {
+    throw Exception('Oturum bulunamadi: once uygulamadan giris yapin.');
+  }
+  return <String, String>{
+    'Authorization': 'Bearer $token',
+    'Content-Type': 'application/json',
+  };
+}
 
 final class CategoryService {
   static const String _baseUrl = 'https://mavikalem.myideasoft.com/api';
-  final String _token =
-      'ZGM0MGY4MjEyNjNiZTM1OGE2YTg4NDYyMTc5MGFjZTRiOTcyMGRjNWE3NGFlZDM2N2QwYTA2MDQ1NmY0OGE0Yw';
 
   Future<List<CategoryModel>> fetchCategories() async {
-    final url = Uri.parse('$_baseUrl/categories?limit=50'); // Limiti 100 tuttuk
+    final url = Uri.parse('$_baseUrl/categories?limit=50');
     try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final headers = await _authorizedJsonHeaders();
+      final response = await http.get(url, headers: headers);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
 
-        Map<int, CategoryModel> categoryMap = {};
+        final categoryMap = <int, CategoryModel>{};
 
-        // 1. AŞAMA: Tüm kategorileri ve EKSİK ANA KATEGORİLERİ map'e doldur
         for (var item in data) {
-          int id = item['id'];
+          final id = (item['id'] as num).toInt();
 
-          // Kendisini ekle
           if (!categoryMap.containsKey(id)) {
             categoryMap[id] = CategoryModel.fromJson(item);
           }
 
-          // HAYAT KURTARAN DOKUNUŞ: Eğer parent varsa ama map'te yoksa, onu parent objesinden yarat!
           if (item['parent'] != null) {
-            int pId = item['parent']['id'];
+            final pId = (item['parent']['id'] as num).toInt();
             if (!categoryMap.containsKey(pId)) {
               categoryMap[pId] = CategoryModel.fromJson(item['parent']);
             }
           }
         }
 
-        List<CategoryModel> rootCategories = [];
+        final rootCategories = <CategoryModel>[];
 
-        // 2. AŞAMA: Ağaç (Tree) Hiyerarşisini Kur
         categoryMap.forEach((id, cat) {
           if (cat.parentId == null) {
-            rootCategories.add(
-              cat,
-            ); // En tepedeki başlıklar (Kitap, Deneme vs.)
+            rootCategories.add(cat);
           } else {
-            var parent = categoryMap[cat.parentId];
+            final parent = categoryMap[cat.parentId];
             if (parent != null) {
-              // Aynı kategoriyi 2 kez eklememek için kontrol
               if (!parent.subCategories.any((c) => c.id == cat.id)) {
                 parent.subCategories.add(cat);
               }
@@ -66,7 +67,7 @@ final class CategoryService {
 
         return rootCategories;
       }
-      throw Exception('Kategori hatası');
+      throw Exception('Kategori hatasi');
     } catch (e) {
       debugPrint('Kategori Cekme Hatasi: $e');
       rethrow;
@@ -76,45 +77,31 @@ final class CategoryService {
 
 final class ProductService {
   static const String _baseUrl = 'https://mavikalem.myideasoft.com/api';
-  final String _token =
-      'ZGM0MGY4MjEyNjNiZTM1OGE2YTg4NDYyMTc5MGFjZTRiOTcyMGRjNWE3NGFlZDM2N2QwYTA2MDQ1NmY0OGE0Yw';
 
-  /// 1. Mevcut Kategoriye Göre Listeleme Metodu
   Future<List<ProductModel>> fetchProducts({int? categoryId}) async {
-    final String endpoint = categoryId != null
+    final endpoint = categoryId != null
         ? '$_baseUrl/products?categories=$categoryId&limit=100'
         : '$_baseUrl/products?limit=50';
 
     try {
-      final response = await http.get(
-        Uri.parse(endpoint),
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final headers = await _authorizedJsonHeaders();
+      final response = await http.get(Uri.parse(endpoint), headers: headers);
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((e) => ProductModel.fromJson(e)).toList();
       }
-      throw Exception('Ürünler getirilemedi');
+      throw Exception('Urunler getirilemedi');
     } catch (e) {
       rethrow;
     }
   }
 
-  /// 2. SKU İle Nokta Atışı Arama
   Future<ProductModel?> fetchProductBySku(String sku) async {
     final url = Uri.parse('$_baseUrl/products?sku=$sku');
 
     try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final headers = await _authorizedJsonHeaders();
+      final response = await http.get(url, headers: headers);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -131,10 +118,9 @@ final class ProductService {
     }
   }
 
-  /// 3. Hem SKU hem İsim aramasına duyarlı akıllı metod
   Future<List<ProductModel>> searchSmart(String query) async {
     final encodedQuery = Uri.encodeComponent(query.trim());
-    String urlString = '$_baseUrl/products?limit=50';
+    var urlString = '$_baseUrl/products?limit=50';
 
     if (query.contains('.')) {
       urlString += '&sku=$encodedQuery';
@@ -143,12 +129,10 @@ final class ProductService {
     }
 
     try {
+      final headers = await _authorizedJsonHeaders();
       final response = await http.get(
         Uri.parse(urlString),
-        headers: {
-          'Authorization': 'Bearer $_token',
-          'Content-Type': 'application/json',
-        },
+        headers: headers,
       );
 
       if (response.statusCode == 200) {
