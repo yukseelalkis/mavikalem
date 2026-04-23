@@ -7,6 +7,7 @@ import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart'
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/order_pack_matcher.dart';
+import 'package:mavikalem_app/features/orders/domain/order_submit_validation.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/pack_progress_providers.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
@@ -81,6 +82,11 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
       if ((scanned[i.id] ?? 0) >= i.quantity) c++;
     }
     return c;
+  }
+
+  bool _isRefundedStatus(String rawStatus) {
+    final s = rawStatus.trim().toLowerCase();
+    return s.contains('refunded') || s.contains('iade');
   }
 
   String _packLineLabel(OrderItemEntity item, double scanned) {
@@ -262,15 +268,115 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     await controller.dispose();
   }
 
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  Future<void> _confirmAndSubmitToSystem(OrderEntity order) async {
+    if (_isRefundedStatus(order.status)) {
+      _showErrorSnackBar(
+        'Iade edilen siparislerde toplama modu kullanilamaz.',
+      );
+      return;
+    }
+
+    final scanned = ref.read(packProgressProvider(order.id));
+    final validationResult = validatePackQuantities(scanned, order.items);
+
+    switch (validationResult) {
+      case PackQuantityResult.missing:
+        _showErrorSnackBar(
+          'Eksik urun okuttunuz. Lutfen tum urunleri tamamlayin.',
+        );
+        return;
+      case PackQuantityResult.excess:
+        _showErrorSnackBar(
+          'Fazla urun okuttunuz. Lutfen siparisi kontrol edin.',
+        );
+        return;
+      case PackQuantityResult.equal:
+        break;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Emin misin?'),
+        content: const Text(
+          'Toplama tamamlandi. Siparis durumunu sisteme gondermek istiyor musun?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Vazgec'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Onayla'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    await ref
+        .read(submitOrderStatusProvider(order.id).notifier)
+        .submit(deliveryTypeRaw: order.deliveryTypeRaw);
+  }
+
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
     final scanned = ref.watch(packProgressProvider(order.id));
+    final submitState = ref.watch(submitOrderStatusProvider(order.id));
     final theme = Theme.of(context);
 
     final linesSum = _linesSum(order.items);
     final finalAmt = order.finalAmount;
     final mismatch = finalAmt != null && (linesSum - finalAmt).abs() > 0.01;
+
+    ref.listen<AsyncValue<void>>(submitOrderStatusProvider(order.id), (
+      previous,
+      next,
+    ) {
+      if (previous?.isLoading != true) return;
+      if (!mounted) return;
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      next.whenOrNull(
+        data: (_) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Durum basariyla sisteme gonderildi.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        error: (error, _) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Sisteme gonderilemedi: $error'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      );
+    });
+
+    final isPackModeAllowed = !_isRefundedStatus(order.status);
+    final isPackModeActive = _packMode && isPackModeAllowed;
+    final packValidation = validatePackQuantities(scanned, order.items);
+    final isExactMatch = packValidation == PackQuantityResult.equal;
 
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -310,12 +416,25 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                             ),
                           ),
                           Switch(
-                            value: _packMode,
-                            onChanged: (v) => setState(() => _packMode = v),
+                            value: isPackModeActive,
+                            onChanged: isPackModeAllowed
+                                ? (v) => setState(() => _packMode = v)
+                                : null,
                           ),
                         ],
                       ),
-                      if (_packMode) ...[
+                      if (!isPackModeAllowed)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'Iade edilen siparislerde toplama modu kapali.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      if (isPackModeActive) ...[
                         const SizedBox(height: 8),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
@@ -329,12 +448,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                           'Satir: ${_completedLineCount(scanned, order.items)} / ${order.items.length}',
                           style: theme.textTheme.bodySmall,
                         ),
-                        if (_completedLineCount(scanned, order.items) ==
-                                order.items.length &&
-                            order.items.isNotEmpty &&
-                            order.items.every(
-                              (i) => (scanned[i.id] ?? 0) >= i.quantity,
-                            ))
+                        if (isExactMatch)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
@@ -373,6 +487,30 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                           icon: const Icon(Icons.qr_code_scanner),
                           label: const Text('Kamera ile okut'),
                         ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: isExactMatch && !submitState.isLoading
+                                ? () => _confirmAndSubmitToSystem(order)
+                                : null,
+                            icon: submitState.isLoading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.cloud_upload_rounded),
+                            label: Text(
+                              submitState.isLoading
+                                  ? 'Sisteme Gonderiliyor...'
+                                  : 'Sisteme Gonder',
+                            ),
+                          ),
+                        ),
                       ],
                     ],
                   ),
@@ -398,7 +536,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                     child: _OrderLineCard(
                       orderId: order.id,
                       item: item,
-                      packMode: _packMode,
+                      packMode: isPackModeActive,
                       scannedCount: s,
                       packStatusLabel: _packLineLabel(item, s),
                       packStatusColor: _packLineColor(context, item, s),

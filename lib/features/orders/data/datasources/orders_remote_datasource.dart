@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:mavikalem_app/core/constants/api_endpoints.dart';
+import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
 import 'package:mavikalem_app/core/network/api_response_parser.dart';
 import 'package:mavikalem_app/features/orders/data/models/order_response_model.dart';
 import 'package:mavikalem_app/features/orders/domain/order_sorting.dart';
@@ -58,5 +59,31 @@ final class OrdersRemoteDataSource {
 
     final map = ApiResponseParser.parseMap(response.data);
     return OrderResponseModel.fromJson(map);
+  }
+
+  Future<void> updateOrderStatus({
+    required int orderId,
+    required String? deliveryTypeRaw,
+  }) async {
+    final body = buildOrderStatusUpdateBody(deliveryTypeRaw);
+    await _dio.put<dynamic>(
+      '${ApiEndpoints.orderDetails}/$orderId',
+      data: body,
+    );
+  }
+}
+
+Map<String, String> buildOrderStatusUpdateBody(String? deliveryTypeRaw) {
+  final kind = resolveDeliveryType(deliveryTypeRaw);
+  switch (kind) {
+    case DeliveryTypeKind.storePickup:
+    case DeliveryTypeKind.cargo:
+      // Toplama tamamlandığında her iki teslimat tipinde de sipariş
+      // "Hazırlanıyor" (being_prepared) statüsüne alınır.
+      return const <String, String>{'status': 'being_prepared'};
+    case DeliveryTypeKind.unknown:
+      throw StateError(
+        'Teslimat tipi anlasilamadi. Durum guncellemesi gonderilemedi.',
+      );
   }
 }

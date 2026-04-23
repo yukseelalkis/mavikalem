@@ -18,4 +18,15 @@ final class OrdersRepositoryImpl implements OrdersRepository {
   Future<OrderEntity> getOrderDetail(int orderId) {
     return _remoteDataSource.fetchOrderDetail(orderId);
   }
+
+  @override
+  Future<void> updateOrderStatus({
+    required int orderId,
+    required String? deliveryTypeRaw,
+  }) {
+    return _remoteDataSource.updateOrderStatus(
+      orderId: orderId,
+      deliveryTypeRaw: deliveryTypeRaw,
+    );
+  }
 }

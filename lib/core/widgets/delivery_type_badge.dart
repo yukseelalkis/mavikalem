@@ -51,14 +51,14 @@ final class DeliveryTypeBadge extends StatelessWidget {
     switch (resolvedKind) {
       case DeliveryTypeKind.storePickup:
         return _DeliveryBadgeStyle(
-          label: 'Mağazadan Teslim',
+          label: 'Magazada Teslim',
           icon: Icons.storefront_rounded,
           foregroundColor: Colors.green.shade800,
           backgroundColor: Colors.green.shade50,
         );
       case DeliveryTypeKind.cargo:
         return _DeliveryBadgeStyle(
-          label: 'Kargo ile Teslim',
+          label: 'Kargoda Teslim',
           icon: Icons.local_shipping_rounded,
           foregroundColor: Colors.blue.shade800,
           backgroundColor: Colors.blue.shade50,

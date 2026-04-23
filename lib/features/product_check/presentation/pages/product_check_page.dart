@@ -735,37 +735,8 @@ final class _FullscreenProductGalleryState extends State<_FullscreenProductGalle
                     ),
                   ),
                 ),
-<<<<<<< HEAD
               );
             },
-=======
-              ),
-              Positioned(
-                top: MediaQuery.paddingOf(ctx).top + 8,
-                right: 8,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: Colors.white24,
-                    foregroundColor: Colors.white,
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  icon: const Icon(Icons.close),
-                ),
-              ),
-              Positioned(
-                bottom: MediaQuery.paddingOf(ctx).bottom + 16,
-                left: 0,
-                right: 0,
-                child: Text(
-                  'Parmakla yaklastir / uzaklastir',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(
-                    ctx,
-                  ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                ),
-              ),
-            ],
->>>>>>> 28063d64eecb824775106b65cb69e5da61f61390
           ),
           Positioned(
             top: MediaQuery.paddingOf(context).top + 8,

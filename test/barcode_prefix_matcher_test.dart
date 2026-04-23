@@ -69,5 +69,22 @@ void main() {
 
       expect(stricter, isEmpty);
     });
+
+    test('matches 6933256616319 prefix variants for 04/03/02 suffixes', () {
+      final orderVariants = [
+        _entity(101, '693325661631904'),
+        _entity(102, '693325661631903'),
+        _entity(103, '693325661631902'),
+        _entity(104, '693325661631901234'),
+        _entity(105, '793325661631904'),
+      ];
+
+      final matches = BarcodePrefixMatcher.filter(orderVariants, '6933256616319');
+
+      expect(
+        matches.map((p) => p.barcode),
+        ['693325661631904', '693325661631903', '693325661631902'],
+      );
+    });
   });
 }

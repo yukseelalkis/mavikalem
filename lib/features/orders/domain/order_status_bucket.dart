@@ -54,6 +54,7 @@ enum OrderStatusBucket {
     const yeniKeys = [
       'yeni',
       'new',
+      'approved',
       'bekle',
       'wait',
       'pending',

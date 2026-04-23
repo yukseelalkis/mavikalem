@@ -6,6 +6,7 @@ import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart'
 import 'package:mavikalem_app/features/orders/domain/order_sorting.dart';
 import 'package:mavikalem_app/features/orders/domain/repositories/orders_repository.dart';
 import 'package:mavikalem_app/features/orders/domain/usecases/get_incoming_orders.dart';
+import 'package:mavikalem_app/features/orders/domain/usecases/update_order_status.dart';
 
 final ordersRemoteDataSourceProvider = Provider<OrdersRemoteDataSource>((ref) {
   final dio = ref.watch(dioProvider);
@@ -20,6 +21,11 @@ final ordersRepositoryProvider = Provider<OrdersRepository>((ref) {
 final getIncomingOrdersUseCaseProvider = Provider<GetIncomingOrders>((ref) {
   final repository = ref.watch(ordersRepositoryProvider);
   return GetIncomingOrders(repository);
+});
+
+final updateOrderStatusUseCaseProvider = Provider<UpdateOrderStatus>((ref) {
+  final repository = ref.watch(ordersRepositoryProvider);
+  return UpdateOrderStatus(repository);
 });
 
 const int ordersPageLimit = 50;
@@ -163,3 +169,27 @@ final orderPrepareProvider = FutureProvider.family<OrderEntity, int>((
   final repository = ref.watch(ordersRepositoryProvider);
   return repository.getOrderDetail(orderId);
 });
+
+final submitOrderStatusProvider = StateNotifierProvider
+    .family<SubmitOrderStatusController, AsyncValue<void>, int>((ref, orderId) {
+      return SubmitOrderStatusController(ref, orderId);
+    });
+
+final class SubmitOrderStatusController extends StateNotifier<AsyncValue<void>> {
+  SubmitOrderStatusController(this._ref, this.orderId)
+    : super(const AsyncData(null));
+
+  final Ref _ref;
+  final int orderId;
+
+  Future<void> submit({required String? deliveryTypeRaw}) async {
+    if (state.isLoading) return;
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final useCase = _ref.read(updateOrderStatusUseCaseProvider);
+      await useCase(orderId: orderId, deliveryTypeRaw: deliveryTypeRaw);
+      _ref.invalidate(orderPrepareProvider(orderId));
+      return;
+    });
+  }
+}

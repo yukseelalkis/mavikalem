@@ -102,6 +102,10 @@ void main() {
         OrderStatusBucket.bucketForRawStatus('Yeni siparis'),
         OrderStatusBucket.yeni,
       );
+      expect(
+        OrderStatusBucket.bucketForRawStatus('approved'),
+        OrderStatusBucket.yeni,
+      );
     });
 
     test('matches respects all filter', () {

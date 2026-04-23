@@ -5,6 +5,7 @@ import 'package:mavikalem_app/core/widgets/delivery_type_badge.dart';
 import 'package:mavikalem_app/features/auth/presentation/providers/auth_providers.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/order_status_bucket.dart';
+import 'package:mavikalem_app/features/orders/domain/order_status_localization.dart';
 import 'package:mavikalem_app/features/orders/presentation/pages/order_prepare_page.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
 
@@ -177,96 +178,93 @@ final class _OrderTile extends StatelessWidget {
         : DateFormat('dd.MM.yyyy HH:mm').format(order.createdAt!.toLocal());
 
     final theme = Theme.of(context);
-    final statusBucket = OrderStatusBucket.bucketForRawStatus(order.status);
+    final statusStyle = OrderStatusLocalization.styleForRaw(order.status);
 
-    return ListTile(
-      title: Text('#${order.id} - ${order.customerName}'),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${order.items.length} urun • $createdAtText',
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 6),
-          DeliveryTypeBadge(
-            rawValue: order.deliveryTypeRaw,
-            unknownLabel: 'Teslimat Bilgisi Yok',
-          ),
-          const SizedBox(height: 8),
-          Row(
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => OrderPreparePage(orderId: order.id),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _OrderStatusChip(bucket: statusBucket),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Tooltip(
-                  message: 'API durumu: ${order.status}',
-                  child: Text(
-                    order.status,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      '#${order.id} - ${order.customerName}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
+                  const Icon(Icons.chevron_right),
+                ],
               ),
+              const SizedBox(height: 6),
+              Text(
+                '${order.items.length} urun • $createdAtText',
+                style: theme.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: DeliveryTypeBadge(
+                      rawValue: order.deliveryTypeRaw,
+                      unknownLabel: 'Teslimat Bilgisi Yok',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _ProminentOrderStatusBadge(style: statusStyle),
             ],
           ),
-        ],
+        ),
       ),
-      isThreeLine: true,
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => OrderPreparePage(orderId: order.id),
-          ),
-        );
-      },
     );
   }
 }
 
-final class _OrderStatusChip extends StatelessWidget {
-  const _OrderStatusChip({required this.bucket});
+final class _ProminentOrderStatusBadge extends StatelessWidget {
+  const _ProminentOrderStatusBadge({required this.style});
 
-  final OrderStatusBucket bucket;
-
-  Color _background(ColorScheme scheme) => switch (bucket) {
-    OrderStatusBucket.all => scheme.surfaceContainerHighest,
-    OrderStatusBucket.yeni => scheme.primaryContainer,
-    OrderStatusBucket.hazirlaniyor => scheme.tertiaryContainer,
-    OrderStatusBucket.tamamlandi => scheme.secondaryContainer,
-    OrderStatusBucket.diger => scheme.surfaceContainerHighest,
-  };
-
-  Color _foreground(ColorScheme scheme) => switch (bucket) {
-    OrderStatusBucket.all => scheme.onSurfaceVariant,
-    OrderStatusBucket.yeni => scheme.onPrimaryContainer,
-    OrderStatusBucket.hazirlaniyor => scheme.onTertiaryContainer,
-    OrderStatusBucket.tamamlandi => scheme.onSecondaryContainer,
-    OrderStatusBucket.diger => scheme.onSurfaceVariant,
-  };
+  final OrderStatusDisplayStyle style;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Chip(
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      label: Text(
-        bucket.label,
-        style: theme.textTheme.labelMedium?.copyWith(
-          fontWeight: FontWeight.w700,
-          color: _foreground(scheme),
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: style.color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: style.color.withValues(alpha: 0.35)),
       ),
-      backgroundColor: _background(scheme),
-      side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Row(
+        children: [
+          Icon(Icons.flag_circle_rounded, color: style.color, size: 20),
+          const SizedBox(width: 8),
+          Text(
+            style.label,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: style.color,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

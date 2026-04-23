@@ -5,4 +5,8 @@ abstract interface class OrdersRepository {
     required int page,
   });
   Future<OrderEntity> getOrderDetail(int orderId);
+  Future<void> updateOrderStatus({
+    required int orderId,
+    required String? deliveryTypeRaw,
+  });
 }
