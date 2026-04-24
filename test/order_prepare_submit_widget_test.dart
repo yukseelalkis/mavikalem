@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
+import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 import 'package:mavikalem_app/features/orders/domain/repositories/orders_repository.dart';
 import 'package:mavikalem_app/features/orders/presentation/pages/order_prepare_page.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
@@ -21,6 +22,7 @@ final class _FakeOrdersRepository implements OrdersRepository {
   final OrderEntity order;
   int? updatedOrderId;
   String? updatedDeliveryTypeRaw;
+  OrderStatusTarget? updatedTarget;
 
   @override
   Future<List<OrderEntity>> getIncomingOrders({required int page}) async {
@@ -36,9 +38,11 @@ final class _FakeOrdersRepository implements OrdersRepository {
   Future<void> updateOrderStatus({
     required int orderId,
     required String? deliveryTypeRaw,
+    OrderStatusTarget target = OrderStatusTarget.auto,
   }) async {
     updatedOrderId = orderId;
     updatedDeliveryTypeRaw = deliveryTypeRaw;
+    updatedTarget = target;
   }
 }
 

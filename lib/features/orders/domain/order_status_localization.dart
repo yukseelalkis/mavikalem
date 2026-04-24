@@ -66,16 +66,16 @@ final class OrderStatusLocalization {
       return OrderStatusDisplayStyle(label: label, color: Colors.red);
     }
     if (s == 'waiting_for_approval' || s.contains('waiting_for_approval')) {
-      return OrderStatusDisplayStyle(label: label, color: Colors.amber.shade700);
+      return OrderStatusDisplayStyle(
+        label: label,
+        color: Colors.amber.shade700,
+      );
     }
     if (s == 'supplying' || s.contains('tedarik') || s.contains('supply')) {
       return OrderStatusDisplayStyle(label: label, color: Colors.purple);
     }
     if (s == 'waiting_for_payment' || s.contains('payment')) {
-      return OrderStatusDisplayStyle(
-        label: label,
-        color: Colors.deepOrange,
-      );
+      return OrderStatusDisplayStyle(label: label, color: Colors.deepOrange);
     }
 
     return OrderStatusDisplayStyle(label: label, color: Colors.blueGrey);

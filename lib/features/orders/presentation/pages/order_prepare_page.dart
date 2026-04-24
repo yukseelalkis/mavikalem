@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_item_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_entity.dart';
@@ -23,7 +24,16 @@ final class OrderPreparePage extends ConsumerWidget {
     final orderAsync = ref.watch(orderPrepareProvider(orderId));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Siparis detay #$orderId')),
+      appBar: AppBar(
+        title: Text('Siparis detay #$orderId'),
+        actions: [
+          orderAsync.when(
+            data: (order) => _OrderActionsMenu(order: order),
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
+      ),
       body: orderAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, _) => Center(
@@ -38,6 +48,184 @@ final class OrderPreparePage extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// Siparis detayi AppBar'inda gosterilen aksiyonlar menusu.
+///
+/// "Teslim Et" aksiyonu YALNIZCA magaza teslim (`DeliveryTypeKind.storePickup`)
+/// siparislerinde gosterilir; kargo siparislerinde menu gorunmez cunku bu
+/// siparislerde musteriye fiilen teslim kargo tarafindan yapilir ve statu
+/// ayri bir akista degistirilir.
+///
+/// Kullanici "Teslim Et" -> onay akisini gectiginde
+/// [markOrderDeliveredProvider] uzerinden API'ye final `delivered` istegi
+/// gonderilir. Halihazirda teslim edilmis ya da iade siparislerde secenek
+/// pasiflesir.
+final class _OrderActionsMenu extends ConsumerWidget {
+  const _OrderActionsMenu({required this.order});
+
+  final OrderEntity order;
+
+  /// Ekran genisligi bu esikten buyukse AppBar aksiyonu metin etiketi ile
+  /// birlikte goster; aksi halde yalnizca ikon render edilerek dar ekranlarda
+  /// AppBar basliginin tasmasi engellenir.
+  static const double _kMinWidthForLabel = 360;
+
+  bool _isAlreadyDelivered(String rawStatus) {
+    final normalized = rawStatus.trim().toLowerCase();
+    return normalized == 'delivered' || normalized.contains('teslim');
+  }
+
+  bool _isRefundedStatus(String rawStatus) {
+    final normalized = rawStatus.trim().toLowerCase();
+    return normalized.contains('refunded') || normalized.contains('iade');
+  }
+
+  bool _isBeingPreparedStatus(String rawStatus) {
+    final normalized = rawStatus.trim().toLowerCase();
+    return normalized == 'being_prepared' ||
+        normalized.contains('being_prepared') ||
+        normalized.contains('hazirlaniyor') ||
+        normalized.contains('hazırlanıyor');
+  }
+
+  bool _isStorePickupOrder() {
+    return resolveDeliveryType(order.deliveryTypeRaw) ==
+        DeliveryTypeKind.storePickup;
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // "Teslim Et" aksiyonu yalnizca magaza teslim siparislerde anlamli.
+    // Diger teslimat tiplerinde aksiyon hic gosterilmez.
+    if (!_isStorePickupOrder()) {
+      return const SizedBox.shrink();
+    }
+
+    ref.listen<AsyncValue<void>>(markOrderDeliveredProvider(order.id), (
+      previous,
+      next,
+    ) {
+      if (previous?.isLoading != true) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.clearSnackBars();
+      next.whenOrNull(
+        data: (_) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Siparis basariyla teslim edildi olarak isaretlendi.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+        error: (error, _) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('Teslim edildi guncellemesi basarisiz: $error'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      );
+    });
+
+    final deliverState = ref.watch(markOrderDeliveredProvider(order.id));
+    if (deliverState.isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final alreadyDelivered = _isAlreadyDelivered(order.status);
+    final isRefunded = _isRefundedStatus(order.status);
+    final isBeingPrepared = _isBeingPreparedStatus(order.status);
+    final canDeliver = isBeingPrepared && !alreadyDelivered && !isRefunded;
+    final label = alreadyDelivered ? 'Teslim Edildi' : 'Teslim Et';
+    final tooltip = canDeliver
+        ? 'Siparisi teslim edildi olarak isaretle'
+        : 'Teslim Et yalnizca Hazirlaniyor durumunda aktif';
+    final onPressed = canDeliver
+        ? () => _confirmAndMarkDelivered(context, ref)
+        : null;
+
+    return LayoutBuilder(
+      builder: (context, _) {
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final showLabel = screenWidth >= _kMinWidthForLabel;
+
+        if (showLabel) {
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: TextButton.icon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.check),
+              label: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: canDeliver
+                    ? Colors.green.shade100
+                    : Theme.of(context).colorScheme.onPrimary,
+                disabledForegroundColor: Theme.of(
+                  context,
+                ).colorScheme.onPrimary.withValues(alpha: 0.4),
+              ),
+            ),
+          );
+        }
+
+        return IconButton(
+          tooltip: tooltip,
+          color: canDeliver ? Colors.green.shade100 : null,
+          icon: const Icon(Icons.check_circle),
+          onPressed: onPressed,
+        );
+      },
+    );
+  }
+
+  Future<void> _confirmAndMarkDelivered(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Teslim Et'),
+        content: const Text(
+          'Ideasoft paneline teslim etmek istiyor musun?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Iptal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Evet'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await ref
+        .read(markOrderDeliveredProvider(order.id).notifier)
+        .markAsDelivered();
   }
 }
 
@@ -685,10 +873,35 @@ final class _OrderLineCard extends ConsumerWidget {
         ? scannedCount.toInt().toString()
         : scannedCount.toStringAsFixed(2);
 
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    final isOverScanned = scannedCount > item.quantity;
+    final isCompleted = scannedCount >= item.quantity;
+    final isUnderScanned = scannedCount < item.quantity;
+    const completedBgColor = Color(0xFFE8F5E9); // Material green.shade50
+    const overScannedBgColor = Color(0xFFFFEBEE); // Material red.shade50
+    const underScannedBgColor = Color(0xFFFFF8E1); // Material amber.shade50
+    final backgroundColor = isOverScanned
+        ? overScannedBgColor
+        : isCompleted
+        ? completedBgColor
+        : isUnderScanned
+        ? underScannedBgColor
+        : theme.colorScheme.surface;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
       clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.07),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Row(

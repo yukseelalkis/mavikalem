@@ -1,5 +1,6 @@
 import 'package:mavikalem_app/features/orders/data/datasources/orders_remote_datasource.dart';
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
+import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 import 'package:mavikalem_app/features/orders/domain/repositories/orders_repository.dart';
 
 final class OrdersRepositoryImpl implements OrdersRepository {
@@ -23,10 +24,12 @@ final class OrdersRepositoryImpl implements OrdersRepository {
   Future<void> updateOrderStatus({
     required int orderId,
     required String? deliveryTypeRaw,
+    OrderStatusTarget target = OrderStatusTarget.auto,
   }) {
     return _remoteDataSource.updateOrderStatus(
       orderId: orderId,
       deliveryTypeRaw: deliveryTypeRaw,
+      target: target,
     );
   }
 }

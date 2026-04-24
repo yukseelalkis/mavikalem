@@ -4,6 +4,7 @@ import 'package:mavikalem_app/core/delivery/delivery_type_kind.dart';
 import 'package:mavikalem_app/core/network/api_response_parser.dart';
 import 'package:mavikalem_app/features/orders/data/models/order_response_model.dart';
 import 'package:mavikalem_app/features/orders/domain/order_sorting.dart';
+import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 
 final class OrdersRemoteDataSource {
   const OrdersRemoteDataSource(this._dio);
@@ -64,8 +65,9 @@ final class OrdersRemoteDataSource {
   Future<void> updateOrderStatus({
     required int orderId,
     required String? deliveryTypeRaw,
+    OrderStatusTarget target = OrderStatusTarget.auto,
   }) async {
-    final body = buildOrderStatusUpdateBody(deliveryTypeRaw);
+    final body = buildOrderStatusUpdateBody(deliveryTypeRaw, target: target);
     await _dio.put<dynamic>(
       '${ApiEndpoints.orderDetails}/$orderId',
       data: body,
@@ -73,13 +75,32 @@ final class OrdersRemoteDataSource {
   }
 }
 
-Map<String, String> buildOrderStatusUpdateBody(String? deliveryTypeRaw) {
+/// Sipariş durumu PUT isteğinin gövdesini hedef [target] ve teslimat tipine
+/// göre hesaplar.
+///
+/// - [OrderStatusTarget.delivered]: Teslimat tipinden bağımsız olarak siparişi
+///   doğrudan `delivered` statüsüne taşır. Panel üzerinden final "Teslim Et"
+///   aksiyonunda (yalnızca mağaza teslim siparişlerde) kullanılır.
+/// - [OrderStatusTarget.auto]: Ürün toplama tamamlandığında ("Sisteme Gonder")
+///   hem mağaza teslim hem kargo siparişlerinde sipariş `being_prepared`
+///   statüsüne alınır. Mağaza teslim siparişlerinde müşteriye teslim edildiği
+///   an `OrderStatusTarget.delivered` ile ayrıca güncellenir.
+Map<String, String> buildOrderStatusUpdateBody(
+  String? deliveryTypeRaw, {
+  OrderStatusTarget target = OrderStatusTarget.auto,
+}) {
+  if (target == OrderStatusTarget.delivered) {
+    return const <String, String>{'status': 'delivered'};
+  }
+
   final kind = resolveDeliveryType(deliveryTypeRaw);
   switch (kind) {
     case DeliveryTypeKind.storePickup:
     case DeliveryTypeKind.cargo:
       // Toplama tamamlandığında her iki teslimat tipinde de sipariş
-      // "Hazırlanıyor" (being_prepared) statüsüne alınır.
+      // "Hazırlanıyor" (being_prepared) statüsüne alınır. Mağaza teslim
+      // siparişlerde müşteriye fiilen teslim edildiğinde ayrı bir
+      // "Teslim Et" aksiyonu ile `delivered` statüsüne güncellenir.
       return const <String, String>{'status': 'being_prepared'};
     case DeliveryTypeKind.unknown:
       throw StateError(

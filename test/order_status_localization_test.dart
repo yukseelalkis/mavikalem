@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mavikalem_app/features/orders/data/datasources/orders_remote_datasource.dart';
 import 'package:mavikalem_app/features/orders/domain/order_status_localization.dart';
+import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 
 void main() {
   group('OrderStatusLocalization.toTurkish', () {
@@ -96,14 +98,24 @@ void main() {
     // The actual HTTP verb change is a data-layer concern; here we verify
     // that the expected body strings align with what the API expects for PUT.
     test('store pickup body contains being_prepared (toplama tamamlandi)', () {
-      // Toplama tamamlandığında mağaza teslimi de being_prepared gönderir.
-      const body = <String, String>{'status': 'being_prepared'};
+      // Toplama tamamlandığında mağaza teslim siparişlerde de statu
+      // "Hazırlanıyor" (being_prepared) olur. Musteriye fiilen teslim
+      // ayri "Teslim Et" aksiyonu ile yapilir.
+      final body = buildOrderStatusUpdateBody('magazadan teslim');
       expect(body['status'], 'being_prepared');
     });
 
     test('cargo body contains being_prepared', () {
-      const body = <String, String>{'status': 'being_prepared'};
+      final body = buildOrderStatusUpdateBody('kargo');
       expect(body['status'], 'being_prepared');
+    });
+
+    test('explicit delivered target always sends delivered', () {
+      final body = buildOrderStatusUpdateBody(
+        'kargo',
+        target: OrderStatusTarget.delivered,
+      );
+      expect(body['status'], 'delivered');
     });
 
     test('delivered maps back to Teslim Edildi via mapper', () {

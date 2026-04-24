@@ -5,6 +5,7 @@ final class OAuthConfig {
       '54rhpfgz8ug4g88ckwoc0wowkg8sg4g88800koosk0gkwwo448';
 
   // Bu degerin IdeaSoft OAuth client ayarlarinda whitelist edilmis olmasi gerekir.
-  static const String redirectUri = 'https://oauth.pstmn.io/v1/callback';
+  static const String redirectUri =
+      'https://oauth.pstmn.io/v1/browser-callback';
   static const String redirectUriPrefix = 'https://oauth.pstmn.io';
 }
