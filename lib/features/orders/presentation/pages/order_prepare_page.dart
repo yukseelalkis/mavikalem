@@ -12,9 +12,21 @@ import 'package:mavikalem_app/features/orders/domain/entities/shipping_address_e
 import 'package:mavikalem_app/features/orders/domain/order_pack_matcher.dart';
 import 'package:mavikalem_app/features/orders/domain/order_submit_validation.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
-import 'package:mavikalem_app/features/orders/presentation/providers/pack_progress_providers.dart';
+import 'package:mavikalem_app/features/picking/domain/entities/picked_item.dart';
+import 'package:mavikalem_app/features/picking/presentation/providers/picking_providers.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
+
+final pickedItemsForOrderProvider =
+    StreamProvider.family<List<PickedItem>, int>((ref, orderId) {
+      try {
+        final watch = ref.watch(watchPickedItemsUseCaseProvider);
+        return watch(orderId);
+      } catch (_) {
+        // Supabase may be unavailable in tests or local setups.
+        return Stream<List<PickedItem>>.value(const <PickedItem>[]);
+      }
+    });
 
 final class OrderPreparePage extends ConsumerStatefulWidget {
   const OrderPreparePage({required this.orderId, super.key});
@@ -28,13 +40,16 @@ final class OrderPreparePage extends ConsumerStatefulWidget {
 final class _OrderPreparePageState extends ConsumerState<OrderPreparePage> {
   bool _didMutate = false;
 
-  Future<void> _popWithLatestOrderIfPossible() async {
+  Future<void> _popWithLatestOrderIfPossible({String? overrideStatus}) async {
     final latest = await ref.refresh(
       orderPrepareProvider(widget.orderId).future,
     );
     if (!mounted) return;
     _didMutate = true;
-    Navigator.of(context).pop(latest);
+    final orderForList = overrideStatus == null
+        ? latest
+        : _orderWithStatus(latest, overrideStatus);
+    Navigator.of(context).pop(orderForList);
   }
 
   @override
@@ -54,7 +69,10 @@ final class _OrderPreparePageState extends ConsumerState<OrderPreparePage> {
             orderAsync.when(
               data: (order) => _OrderActionsMenu(
                 order: order,
-                onMutatedSuccess: _popWithLatestOrderIfPossible,
+                onMutatedSuccess: ({String? overrideStatus}) =>
+                    _popWithLatestOrderIfPossible(
+                      overrideStatus: overrideStatus,
+                    ),
               ),
               loading: () => const SizedBox.shrink(),
               error: (_, __) => const SizedBox.shrink(),
@@ -73,7 +91,8 @@ final class _OrderPreparePageState extends ConsumerState<OrderPreparePage> {
             onRefresh: () => ref.refresh(orderPrepareProvider(orderId).future),
             child: _OrderPrepareBody(
               order: order,
-              onMutatedSuccess: _popWithLatestOrderIfPossible,
+              onMutatedSuccess: ({String? overrideStatus}) =>
+                  _popWithLatestOrderIfPossible(overrideStatus: overrideStatus),
             ),
           ),
         ),
@@ -100,7 +119,7 @@ final class _OrderActionsMenu extends ConsumerWidget {
   });
 
   final OrderEntity order;
-  final Future<void> Function() onMutatedSuccess;
+  final Future<void> Function({String? overrideStatus}) onMutatedSuccess;
 
   /// Ekran genisligi bu esikten buyukse AppBar aksiyonu metin etiketi ile
   /// birlikte goster; aksi halde yalnizca ikon render edilerek dar ekranlarda
@@ -156,7 +175,7 @@ final class _OrderActionsMenu extends ConsumerWidget {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          unawaited(onMutatedSuccess());
+          unawaited(onMutatedSuccess(overrideStatus: 'delivered'));
         },
         error: (error, _) {
           messenger.showSnackBar(
@@ -272,7 +291,7 @@ final class _OrderPrepareBody extends ConsumerStatefulWidget {
   });
 
   final OrderEntity order;
-  final Future<void> Function() onMutatedSuccess;
+  final Future<void> Function({String? overrideStatus}) onMutatedSuccess;
 
   @override
   ConsumerState<_OrderPrepareBody> createState() => _OrderPrepareBodyState();
@@ -351,9 +370,6 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     var matches = OrderPackMatcher.matchingLinesForOrderPack(scan, items);
     final allowedLineIds = items.map((e) => e.id).toSet();
     matches = matches.where((m) => allowedLineIds.contains(m.id)).toList();
-
-    final notifier = ref.read(packProgressProvider(widget.order.id).notifier);
-
     if (matches.isEmpty) {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -388,7 +404,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     }
 
     if (matches.length == 1) {
-      await notifier.incrementLine(matches.first.id, 1);
+      await _changePickedForOrderItem(matches.first, 1);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -444,11 +460,36 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
       },
     );
     if (picked != null) {
-      await notifier.incrementLine(picked.id, 1);
+      await _changePickedForOrderItem(picked, 1);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Eklendi: ${picked.name}')));
+    }
+  }
+
+  Future<void> _changePickedForOrderItem(
+    OrderItemEntity item,
+    int quantityDelta,
+  ) async {
+    if (quantityDelta == 0) return;
+    final sku = item.stockCode.trim();
+    if (sku.isEmpty || sku == '-') {
+      _showErrorSnackBar(
+        'Gecerli stok kodu olmayan urun Supabase\'e yazilamaz.',
+      );
+      return;
+    }
+    try {
+      final addPickedItem = ref.read(addPickedItemUseCaseProvider);
+      await addPickedItem(
+        orderId: widget.order.id,
+        sku: sku,
+        quantityDelta: quantityDelta,
+      );
+    } catch (error) {
+      _showErrorSnackBar('Toplama bilgisi kaydedilemedi: $error');
+      rethrow;
     }
   }
 
@@ -523,7 +564,25 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
       return;
     }
 
-    final scanned = ref.read(packProgressProvider(order.id));
+    final pickedItemsAsync = ref.read(pickedItemsForOrderProvider(order.id));
+    if (pickedItemsAsync.isLoading) {
+      _showErrorSnackBar('Veriler senkronize ediliyor. Lutfen tekrar deneyin.');
+      return;
+    }
+    if (pickedItemsAsync.hasError) {
+      _showErrorSnackBar('Toplama verisi alinamadi. Lutfen tekrar deneyin.');
+      return;
+    }
+    final pickedItems = pickedItemsAsync.asData?.value;
+    final pickedBySku = <String, int>{
+      for (final picked in pickedItems ?? const <PickedItem>[])
+        picked.sku.trim().toLowerCase(): picked.quantity,
+    };
+    final scanned = <int, double>{
+      for (final item in order.items)
+        item.id: (pickedBySku[item.stockCode.trim().toLowerCase()] ?? 0)
+            .toDouble(),
+    };
     final validationResult = validatePackQuantities(scanned, order.items);
 
     switch (validationResult) {
@@ -570,7 +629,20 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
-    final scanned = ref.watch(packProgressProvider(order.id));
+    final pickedItemsAsync = ref.watch(pickedItemsForOrderProvider(order.id));
+    final pickedBySku = <String, int>{
+      for (final picked
+          in pickedItemsAsync.asData?.value ?? const <PickedItem>[])
+        picked.sku.trim().toLowerCase(): picked.quantity,
+    };
+    final remoteScanned = <int, double>{
+      for (final item in order.items)
+        item.id: (pickedBySku[item.stockCode.trim().toLowerCase()] ?? 0)
+            .toDouble(),
+    };
+    final scanned = <int, double>{
+      for (final item in order.items) item.id: remoteScanned[item.id] ?? 0,
+    };
     final submitState = ref.watch(submitOrderStatusProvider(order.id));
     final theme = Theme.of(context);
 
@@ -595,7 +667,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
               behavior: SnackBarBehavior.floating,
             ),
           );
-          unawaited(widget.onMutatedSuccess());
+          unawaited(widget.onMutatedSuccess(overrideStatus: 'being_prepared'));
         },
         error: (error, _) {
           messenger.showSnackBar(
@@ -683,6 +755,28 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                           'Satir: ${_completedLineCount(scanned, order.items)} / ${order.items.length}',
                           style: theme.textTheme.bodySmall,
                         ),
+                        if (pickedItemsAsync.isLoading)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'Veriler senkronize ediliyor...',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.tertiary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        if (pickedItemsAsync.hasError)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'Toplama verisi alinamadi. Ag baglantisini kontrol edin.',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: theme.colorScheme.error,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                         if (isExactMatch)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
@@ -726,7 +820,11 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                         SizedBox(
                           width: double.infinity,
                           child: FilledButton.icon(
-                            onPressed: isExactMatch && !submitState.isLoading
+                            onPressed:
+                                isExactMatch &&
+                                    !submitState.isLoading &&
+                                    !pickedItemsAsync.isLoading &&
+                                    !pickedItemsAsync.hasError
                                 ? () => _confirmAndSubmitToSystem(order)
                                 : null,
                             icon: submitState.isLoading
@@ -768,12 +866,13 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _OrderLineCard(
-                    orderId: order.id,
                     item: item,
                     packMode: isPackModeActive,
                     scannedCount: s,
                     packStatusLabel: _packLineLabel(item, s),
                     packStatusColor: _packLineColor(context, item, s),
+                    onDecrement: () => _changePickedForOrderItem(item, -1),
+                    onIncrement: () => _changePickedForOrderItem(item, 1),
                   ),
                 );
               }, childCount: order.items.length),
@@ -887,27 +986,29 @@ final class _OrderSummaryCard extends StatelessWidget {
   }
 }
 
-final class _OrderLineCard extends ConsumerWidget {
+final class _OrderLineCard extends StatelessWidget {
   const _OrderLineCard({
-    required this.orderId,
     required this.item,
     required this.packMode,
     required this.scannedCount,
     required this.packStatusLabel,
     required this.packStatusColor,
+    required this.onDecrement,
+    required this.onIncrement,
   });
 
-  final int orderId;
   final OrderItemEntity item;
   final bool packMode;
   final double scannedCount;
   final String packStatusLabel;
   final Color packStatusColor;
+  final Future<void> Function() onDecrement;
+  final Future<void> Function() onIncrement;
 
   static String _money(double v) => '${v.toStringAsFixed(2)} TL';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final qtyText = item.quantity % 1 == 0
         ? item.quantity.toInt().toString()
@@ -1057,19 +1158,13 @@ final class _OrderLineCard extends ConsumerWidget {
                         IconButton.filledTonal(
                           tooltip: 'Azalt',
                           onPressed: scannedCount > 0
-                              ? () => ref
-                                    .read(
-                                      packProgressProvider(orderId).notifier,
-                                    )
-                                    .incrementLine(item.id, -1)
+                              ? () => onDecrement()
                               : null,
                           icon: const Icon(Icons.remove),
                         ),
                         IconButton.filled(
                           tooltip: 'Arttir',
-                          onPressed: () => ref
-                              .read(packProgressProvider(orderId).notifier)
-                              .incrementLine(item.id, 1),
+                          onPressed: onIncrement,
                           icon: const Icon(Icons.add),
                         ),
                         const SizedBox(width: 8),
@@ -1346,4 +1441,19 @@ Future<void> _copy(BuildContext context, String label, String text) async {
   ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text('$label kopyalandi')));
+}
+
+OrderEntity _orderWithStatus(OrderEntity order, String status) {
+  return OrderEntity(
+    id: order.id,
+    orderNumber: order.orderNumber,
+    customerName: order.customerName,
+    status: status,
+    createdAt: order.createdAt,
+    items: order.items,
+    shippingAddress: order.shippingAddress,
+    finalAmount: order.finalAmount,
+    paymentTypeName: order.paymentTypeName,
+    deliveryTypeRaw: order.deliveryTypeRaw,
+  );
 }
