@@ -4,6 +4,8 @@ import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 abstract interface class OrdersRepository {
   Future<List<OrderEntity>> getIncomingOrders({
     required int page,
+    int limit = 50,
+    String? customerFirstNameQuery,
   });
   Future<OrderEntity> getOrderDetail(int orderId);
   Future<void> updateOrderStatus({

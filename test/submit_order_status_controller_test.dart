@@ -14,7 +14,11 @@ final class _FakeOrdersRepository implements OrdersRepository {
   OrderStatusTarget? lastTarget;
 
   @override
-  Future<List<OrderEntity>> getIncomingOrders({required int page}) async {
+  Future<List<OrderEntity>> getIncomingOrders({
+    required int page,
+    int limit = 50,
+    String? customerFirstNameQuery,
+  }) async {
     return const <OrderEntity>[];
   }
 
@@ -77,34 +81,31 @@ void main() {
     expect(state.hasError, isTrue);
   });
 
-  test('markOrderDeliveredProvider sends delivered target and updates state',
-      () async {
-    final fakeRepo = _FakeOrdersRepository();
-    final container = ProviderContainer(
-      overrides: <Override>[
-        ordersRepositoryProvider.overrideWithValue(fakeRepo),
-      ],
-    );
-    addTearDown(container.dispose);
+  test(
+    'markOrderDeliveredProvider sends delivered target and updates state',
+    () async {
+      final fakeRepo = _FakeOrdersRepository();
+      final container = ProviderContainer(
+        overrides: <Override>[
+          ordersRepositoryProvider.overrideWithValue(fakeRepo),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    final notifier = container.read(
-      markOrderDeliveredProvider(77).notifier,
-    );
-    final future = notifier.markAsDelivered();
+      final notifier = container.read(markOrderDeliveredProvider(77).notifier);
+      final future = notifier.markAsDelivered();
 
-    expect(
-      container.read(markOrderDeliveredProvider(77)).isLoading,
-      isTrue,
-    );
+      expect(container.read(markOrderDeliveredProvider(77)).isLoading, isTrue);
 
-    await future;
+      await future;
 
-    final state = container.read(markOrderDeliveredProvider(77));
-    expect(state.hasError, isFalse);
-    expect(fakeRepo.lastOrderId, 77);
-    expect(fakeRepo.lastDeliveryTypeRaw, isNull);
-    expect(fakeRepo.lastTarget, OrderStatusTarget.delivered);
-  });
+      final state = container.read(markOrderDeliveredProvider(77));
+      expect(state.hasError, isFalse);
+      expect(fakeRepo.lastOrderId, 77);
+      expect(fakeRepo.lastDeliveryTypeRaw, isNull);
+      expect(fakeRepo.lastTarget, OrderStatusTarget.delivered);
+    },
+  );
 
   test('markOrderDeliveredProvider exposes error on failure', () async {
     final fakeRepo = _FakeOrdersRepository(shouldThrow: true);

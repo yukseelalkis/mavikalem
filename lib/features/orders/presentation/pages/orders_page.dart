@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:mavikalem_app/core/widgets/delivery_type_badge.dart';
@@ -6,18 +7,33 @@ import 'package:mavikalem_app/features/auth/presentation/providers/auth_provider
 import 'package:mavikalem_app/features/orders/domain/entities/order_entity.dart';
 import 'package:mavikalem_app/features/orders/domain/order_status_bucket.dart';
 import 'package:mavikalem_app/features/orders/domain/order_status_localization.dart';
+import 'package:mavikalem_app/features/orders/presentation/bloc/orders_bloc.dart';
 import 'package:mavikalem_app/features/orders/presentation/pages/order_prepare_page.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
 
-final class OrdersPage extends ConsumerStatefulWidget {
+final class OrdersPage extends ConsumerWidget {
   const OrdersPage({super.key});
 
   @override
-  ConsumerState<OrdersPage> createState() => _OrdersPageState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repository = ref.watch(ordersRepositoryProvider);
+    return BlocProvider<OrdersBloc>(
+      create: (_) => OrdersBloc(repository)..add(const OrdersStarted()),
+      child: const _OrdersView(),
+    );
+  }
 }
 
-final class _OrdersPageState extends ConsumerState<OrdersPage> {
+final class _OrdersView extends ConsumerStatefulWidget {
+  const _OrdersView();
+
+  @override
+  ConsumerState<_OrdersView> createState() => _OrdersViewState();
+}
+
+final class _OrdersViewState extends ConsumerState<_OrdersView> {
   late final ScrollController _scrollController;
+  late final TextEditingController _searchController;
   OrderStatusBucket _statusFilter = OrderStatusBucket.all;
 
   List<OrderEntity> _filtered(List<OrderEntity> orders) {
@@ -32,10 +48,12 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
   void initState() {
     super.initState();
     _scrollController = ScrollController()..addListener(_onScroll);
+    _searchController = TextEditingController();
   }
 
   @override
   void dispose() {
+    _searchController.dispose();
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -46,13 +64,15 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
     if (!_scrollController.hasClients) return;
     final threshold = _scrollController.position.maxScrollExtent - 200;
     if (_scrollController.position.pixels >= threshold) {
-      ref.read(ordersPaginationProvider.notifier).loadMore();
+      context.read<OrdersBloc>().add(const OrdersLoadMoreRequested());
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(ordersPaginationProvider);
+    final state = context.watch<OrdersBloc>().state;
+    final isLoading = state.status == OrdersStatus.loading;
+    final isLoadingMore = state.status == OrdersStatus.loadingMore;
 
     return Scaffold(
       appBar: AppBar(
@@ -61,7 +81,7 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
           IconButton(
             tooltip: 'Yenile',
             onPressed: () =>
-                ref.read(ordersPaginationProvider.notifier).loadInitial(),
+                context.read<OrdersBloc>().add(const OrdersRefreshed()),
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
@@ -74,6 +94,33 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: 'Musteri adina gore ara',
+              leading: const Icon(Icons.search),
+              trailing: [
+                if (_searchController.text.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Temizle',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() {});
+                      context.read<OrdersBloc>().add(
+                        const OrdersSearchCleared(),
+                      );
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
+              onChanged: (text) {
+                setState(() {});
+                context.read<OrdersBloc>().add(OrdersSearchQueryChanged(text));
+              },
+            ),
+          ),
+          if (isLoading || isLoadingMore) const LinearProgressIndicator(),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: SingleChildScrollView(
@@ -105,18 +152,19 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
               ),
             ),
           ),
-          Expanded(child: _buildBody(state)),
+          Expanded(child: _buildBody(state, isLoadingMore)),
         ],
       ),
     );
   }
 
-  Widget _buildBody(OrdersPaginationState state) {
-    if (state.isInitialLoading) {
+  Widget _buildBody(OrdersState state, bool isLoadingMore) {
+    if (state.status == OrdersStatus.initial ||
+        state.status == OrdersStatus.loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (state.errorMessage != null && state.orders.isEmpty) {
+    if (state.status == OrdersStatus.failure && state.orders.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -131,11 +179,15 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
 
     final visible = _filtered(state.orders);
     if (visible.isEmpty) {
+      final query = state.searchQuery;
+      final hasQuery = query != null && query.isNotEmpty;
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Bu filtrede siparis yok (${_statusFilter.label}).',
+            hasQuery
+                ? '\'$query\' icin sonuc bulunamadi.'
+                : 'Bu filtrede siparis yok (${_statusFilter.label}).',
             textAlign: TextAlign.center,
           ),
         ),
@@ -144,9 +196,9 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
 
     return ListView.separated(
       controller: _scrollController,
-      itemCount: visible.length + (state.isLoadingMore ? 1 : 0),
+      itemCount: visible.length + (isLoadingMore ? 1 : 0),
       separatorBuilder: (_, index) {
-        if (index == visible.length - 1 && state.isLoadingMore) {
+        if (index == visible.length - 1 && isLoadingMore) {
           return const SizedBox.shrink();
         }
         return const Divider(height: 0);
@@ -160,16 +212,28 @@ final class _OrdersPageState extends ConsumerState<OrdersPage> {
         }
 
         final order = visible[index];
-        return _OrderTile(order: order);
+        return _OrderTile(
+          order: order,
+          onTap: () async {
+            final updated = await Navigator.of(context).push<OrderEntity>(
+              MaterialPageRoute<OrderEntity>(
+                builder: (_) => OrderPreparePage(orderId: order.id),
+              ),
+            );
+            if (!context.mounted || updated == null) return;
+            context.read<OrdersBloc>().add(OrdersOrderPatched(updated));
+          },
+        );
       },
     );
   }
 }
 
 final class _OrderTile extends StatelessWidget {
-  const _OrderTile({required this.order});
+  const _OrderTile({required this.order, required this.onTap});
 
   final OrderEntity order;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -184,13 +248,7 @@ final class _OrderTile extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => OrderPreparePage(orderId: order.id),
-            ),
-          );
-        },
+        onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           child: Column(

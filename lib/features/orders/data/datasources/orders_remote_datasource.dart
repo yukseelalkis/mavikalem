@@ -15,18 +15,20 @@ final class OrdersRemoteDataSource {
   /// `page=<sayfa>`. Tarih cihaz yerel saati; Dio query map ile degerleri URL-encode eder.
   static const String _sortNewestIdFirst = '-id';
 
-  /// [orders_providers] icindeki [ordersPageLimit] ile ayni kalmali.
-  static const int _limit = 50;
-
   Future<List<OrderResponseModel>> fetchIncomingOrders({
     required int page,
+    int limit = 50,
+    String? customerFirstNameQuery,
   }) async {
     final lteLocal = _formatDeviceLocalDateTime(DateTime.now());
+    final normalizedSearch = customerFirstNameQuery?.trim();
     final queryParameters = <String, dynamic>{
       'sort': _sortNewestIdFirst,
-      'limit': _limit,
+      'limit': limit,
       'page': page,
       'createdAt~lte': lteLocal,
+      if (normalizedSearch != null && normalizedSearch.isNotEmpty)
+        'q[customerFirstname]': normalizedSearch,
     };
 
     final response = await _dio.get<dynamic>(
