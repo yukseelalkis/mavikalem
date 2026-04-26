@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,11 +8,10 @@ import 'package:mavikalem_app/features/orders/domain/order_status_target.dart';
 import 'package:mavikalem_app/features/orders/domain/repositories/orders_repository.dart';
 import 'package:mavikalem_app/features/orders/presentation/pages/order_prepare_page.dart';
 import 'package:mavikalem_app/features/orders/presentation/providers/orders_providers.dart';
-import 'package:mavikalem_app/features/orders/data/pack_progress_storage.dart';
+import 'package:mavikalem_app/features/picking/domain/entities/picked_item.dart';
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 import 'package:mavikalem_app/features/product_check/domain/repositories/product_repository.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 final class _FakeOrdersRepository implements OrdersRepository {
   _FakeOrdersRepository(this.order);
@@ -117,10 +114,9 @@ OrderEntity _buildOrder({
 Future<void> _pumpOrderPage(
   WidgetTester tester, {
   required OrderEntity order,
-  required Map<String, Object> prefs,
+  Stream<List<PickedItem>>? pickedItemsStream,
   bool tapPackSwitch = true,
 }) async {
-  SharedPreferences.setMockInitialValues(prefs);
   final fakeOrdersRepository = _FakeOrdersRepository(order);
   final fakeProductRepository = _FakeProductRepository(
     <int, ProductBriefEntity>{},
@@ -131,6 +127,10 @@ Future<void> _pumpOrderPage(
       overrides: <Override>[
         ordersRepositoryProvider.overrideWithValue(fakeOrdersRepository),
         productRepositoryProvider.overrideWithValue(fakeProductRepository),
+        pickedItemsForOrderProvider(order.id).overrideWith(
+          (ref) =>
+              pickedItemsStream ?? Stream<List<PickedItem>>.value(const []),
+        ),
       ],
       child: MaterialApp(home: OrderPreparePage(orderId: order.id)),
     ),
@@ -141,6 +141,21 @@ Future<void> _pumpOrderPage(
     await tester.tap(find.byType(Switch), warnIfMissed: false);
     await tester.pumpAndSettle();
   }
+}
+
+PickedItem _picked({
+  required int orderId,
+  required String sku,
+  required int quantity,
+}) {
+  return PickedItem(
+    id: '$orderId-$sku',
+    orderId: orderId,
+    sku: sku,
+    productName: sku,
+    quantity: quantity,
+    updatedAt: DateTime(2026, 1, 1),
+  );
 }
 
 void main() {
@@ -188,13 +203,6 @@ void main() {
       deliveryTypeRaw: 'kargo',
     );
 
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      PackProgressStorage.keyForOrder(orderId): jsonEncode(<String, num>{
-        '1': 1,
-        '2': 1,
-      }),
-    });
-
     final fakeOrdersRepository = _FakeOrdersRepository(order);
     final fakeProductRepository =
         _FakeProductRepository(<int, ProductBriefEntity>{
@@ -219,6 +227,12 @@ void main() {
         overrides: <Override>[
           ordersRepositoryProvider.overrideWithValue(fakeOrdersRepository),
           productRepositoryProvider.overrideWithValue(fakeProductRepository),
+          pickedItemsForOrderProvider(orderId).overrideWith(
+            (ref) => Stream<List<PickedItem>>.value(<PickedItem>[
+              _picked(orderId: orderId, sku: 'ORDER-04', quantity: 1),
+              _picked(orderId: orderId, sku: 'ORDER-03', quantity: 1),
+            ]),
+          ),
         ],
         child: const MaterialApp(home: OrderPreparePage(orderId: orderId)),
       ),
@@ -256,12 +270,10 @@ void main() {
     await _pumpOrderPage(
       tester,
       order: order,
-      prefs: <String, Object>{
-        PackProgressStorage.keyForOrder(orderId): jsonEncode(<String, num>{
-          '1': 1,
-          '2': 3,
-        }),
-      },
+      pickedItemsStream: Stream<List<PickedItem>>.value(<PickedItem>[
+        _picked(orderId: orderId, sku: 'SKU-1', quantity: 1),
+        _picked(orderId: orderId, sku: 'SKU-2', quantity: 3),
+      ]),
     );
 
     expect(find.text('Sisteme Gonder'), findsOneWidget);
@@ -287,12 +299,10 @@ void main() {
     await _pumpOrderPage(
       tester,
       order: order,
-      prefs: <String, Object>{
-        PackProgressStorage.keyForOrder(orderId): jsonEncode(<String, num>{
-          '1': 2,
-          '2': 2,
-        }),
-      },
+      pickedItemsStream: Stream<List<PickedItem>>.value(<PickedItem>[
+        _picked(orderId: orderId, sku: 'SKU-1', quantity: 2),
+        _picked(orderId: orderId, sku: 'SKU-2', quantity: 2),
+      ]),
     );
 
     expect(find.text('Sisteme Gonder'), findsOneWidget);
@@ -312,14 +322,6 @@ void main() {
       itemQtyById: <int, double>{1: 2, 2: 3},
     );
 
-    // Tam esit miktar
-    SharedPreferences.setMockInitialValues(<String, Object>{
-      PackProgressStorage.keyForOrder(orderId): jsonEncode(<String, num>{
-        '1': 2,
-        '2': 3,
-      }),
-    });
-
     final fakeOrdersRepository = _FakeOrdersRepository(order);
     final fakeProductRepository = _FakeProductRepository(
       <int, ProductBriefEntity>{},
@@ -330,6 +332,12 @@ void main() {
         overrides: <Override>[
           ordersRepositoryProvider.overrideWithValue(fakeOrdersRepository),
           productRepositoryProvider.overrideWithValue(fakeProductRepository),
+          pickedItemsForOrderProvider(orderId).overrideWith(
+            (ref) => Stream<List<PickedItem>>.value(<PickedItem>[
+              _picked(orderId: orderId, sku: 'SKU-1', quantity: 2),
+              _picked(orderId: orderId, sku: 'SKU-2', quantity: 3),
+            ]),
+          ),
         ],
         child: MaterialApp(home: OrderPreparePage(orderId: orderId)),
       ),
@@ -364,11 +372,9 @@ void main() {
     await _pumpOrderPage(
       tester,
       order: order,
-      prefs: <String, Object>{
-        PackProgressStorage.keyForOrder(orderId): jsonEncode(<String, num>{
-          '1': 1,
-        }),
-      },
+      pickedItemsStream: Stream<List<PickedItem>>.value(<PickedItem>[
+        _picked(orderId: orderId, sku: 'SKU-1', quantity: 1),
+      ]),
     );
 
     expect(
@@ -377,5 +383,26 @@ void main() {
     );
     expect(find.text('Barkod / stok kodu'), findsNothing);
     expect(find.text('Sisteme Gonder'), findsNothing);
+  });
+
+  testWidgets('stream loading iken submit disabled', (tester) async {
+    const orderId = 9006;
+    final order = _buildOrder(
+      orderId: orderId,
+      itemQtyById: <int, double>{1: 1},
+    );
+
+    await _pumpOrderPage(
+      tester,
+      order: order,
+      pickedItemsStream: const Stream<List<PickedItem>>.empty(),
+    );
+    await tester.pump();
+
+    expect(find.text('Veriler senkronize ediliyor...'), findsOneWidget);
+    expect(find.text('Sisteme Gonder'), findsOneWidget);
+    await tester.tap(find.text('Sisteme Gonder'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Emin misin?'), findsNothing);
   });
 }

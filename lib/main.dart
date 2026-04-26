@@ -1,3 +1,4 @@
 import 'package:mavikalem_app/app/bootstrap.dart';
 
-void main() => bootstrap();
+Future<void> main() async => bootstrap();
+ 
