@@ -8,7 +8,13 @@ final class GetIncomingOrders {
 
   Future<List<OrderEntity>> call({
     required int page,
+    int limit = 50,
+    String? customerFirstNameQuery,
   }) {
-    return _repository.getIncomingOrders(page: page);
+    return _repository.getIncomingOrders(
+      page: page,
+      limit: limit,
+      customerFirstNameQuery: customerFirstNameQuery,
+    );
   }
 }

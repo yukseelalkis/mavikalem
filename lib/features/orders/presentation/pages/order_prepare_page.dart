@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,37 +16,66 @@ import 'package:mavikalem_app/features/orders/presentation/providers/pack_progre
 import 'package:mavikalem_app/features/product_check/domain/entities/product_brief_entity.dart';
 import 'package:mavikalem_app/features/product_check/presentation/providers/product_check_providers.dart';
 
-final class OrderPreparePage extends ConsumerWidget {
+final class OrderPreparePage extends ConsumerStatefulWidget {
   const OrderPreparePage({required this.orderId, super.key});
 
   final int orderId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OrderPreparePage> createState() => _OrderPreparePageState();
+}
+
+final class _OrderPreparePageState extends ConsumerState<OrderPreparePage> {
+  bool _didMutate = false;
+
+  Future<void> _popWithLatestOrderIfPossible() async {
+    final latest = await ref.refresh(
+      orderPrepareProvider(widget.orderId).future,
+    );
+    if (!mounted) return;
+    _didMutate = true;
+    Navigator.of(context).pop(latest);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orderId = widget.orderId;
     final orderAsync = ref.watch(orderPrepareProvider(orderId));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Siparis detay #$orderId'),
-        actions: [
-          orderAsync.when(
-            data: (order) => _OrderActionsMenu(order: order),
-            loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
-        ],
-      ),
-      body: orderAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text('Siparis detayi yuklenemedi: $error'),
-          ),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop || _didMutate || result != null) return;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Siparis detay #$orderId'),
+          actions: [
+            orderAsync.when(
+              data: (order) => _OrderActionsMenu(
+                order: order,
+                onMutatedSuccess: _popWithLatestOrderIfPossible,
+              ),
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+            ),
+          ],
         ),
-        data: (order) => RefreshIndicator(
-          onRefresh: () => ref.refresh(orderPrepareProvider(orderId).future),
-          child: _OrderPrepareBody(order: order),
+        body: orderAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text('Siparis detayi yuklenemedi: $error'),
+            ),
+          ),
+          data: (order) => RefreshIndicator(
+            onRefresh: () => ref.refresh(orderPrepareProvider(orderId).future),
+            child: _OrderPrepareBody(
+              order: order,
+              onMutatedSuccess: _popWithLatestOrderIfPossible,
+            ),
+          ),
         ),
       ),
     );
@@ -63,9 +94,13 @@ final class OrderPreparePage extends ConsumerWidget {
 /// gonderilir. Halihazirda teslim edilmis ya da iade siparislerde secenek
 /// pasiflesir.
 final class _OrderActionsMenu extends ConsumerWidget {
-  const _OrderActionsMenu({required this.order});
+  const _OrderActionsMenu({
+    required this.order,
+    required this.onMutatedSuccess,
+  });
 
   final OrderEntity order;
+  final Future<void> Function() onMutatedSuccess;
 
   /// Ekran genisligi bu esikten buyukse AppBar aksiyonu metin etiketi ile
   /// birlikte goster; aksi halde yalnizca ikon render edilerek dar ekranlarda
@@ -115,10 +150,13 @@ final class _OrderActionsMenu extends ConsumerWidget {
         data: (_) {
           messenger.showSnackBar(
             const SnackBar(
-              content: Text('Siparis basariyla teslim edildi olarak isaretlendi.'),
+              content: Text(
+                'Siparis basariyla teslim edildi olarak isaretlendi.',
+              ),
               behavior: SnackBarBehavior.floating,
             ),
           );
+          unawaited(onMutatedSuccess());
         },
         error: (error, _) {
           messenger.showSnackBar(
@@ -205,9 +243,7 @@ final class _OrderActionsMenu extends ConsumerWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Teslim Et'),
-        content: const Text(
-          'Ideasoft paneline teslim etmek istiyor musun?',
-        ),
+        content: const Text('Ideasoft paneline teslim etmek istiyor musun?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -230,9 +266,13 @@ final class _OrderActionsMenu extends ConsumerWidget {
 }
 
 final class _OrderPrepareBody extends ConsumerStatefulWidget {
-  const _OrderPrepareBody({required this.order});
+  const _OrderPrepareBody({
+    required this.order,
+    required this.onMutatedSuccess,
+  });
 
   final OrderEntity order;
+  final Future<void> Function() onMutatedSuccess;
 
   @override
   ConsumerState<_OrderPrepareBody> createState() => _OrderPrepareBodyState();
@@ -253,7 +293,10 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
   double _linesSum(List<OrderItemEntity> items) =>
       items.fold<double>(0, (a, i) => a + _lineTotal(i));
 
-  double _packProgressValue(Map<int, double> scanned, List<OrderItemEntity> items) {
+  double _packProgressValue(
+    Map<int, double> scanned,
+    List<OrderItemEntity> items,
+  ) {
     if (items.isEmpty) return 0;
     double num = 0;
     double den = 0;
@@ -264,7 +307,10 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     return den <= 0 ? 0 : (num / den).clamp(0, 1);
   }
 
-  int _completedLineCount(Map<int, double> scanned, List<OrderItemEntity> items) {
+  int _completedLineCount(
+    Map<int, double> scanned,
+    List<OrderItemEntity> items,
+  ) {
     var c = 0;
     for (final i in items) {
       if ((scanned[i.id] ?? 0) >= i.quantity) c++;
@@ -284,7 +330,11 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     return 'Tamam';
   }
 
-  Color _packLineColor(BuildContext context, OrderItemEntity item, double scanned) {
+  Color _packLineColor(
+    BuildContext context,
+    OrderItemEntity item,
+    double scanned,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     if (scanned <= 0) return scheme.outline;
     if (scanned < item.quantity) return scheme.tertiary;
@@ -340,9 +390,9 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     if (matches.length == 1) {
       await notifier.incrementLine(matches.first.id, 1);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eklendi: ${matches.first.name}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Eklendi: ${matches.first.name}')));
       return;
     }
 
@@ -396,9 +446,9 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
     if (picked != null) {
       await notifier.incrementLine(picked.id, 1);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Eklendi: ${picked.name}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Eklendi: ${picked.name}')));
     }
   }
 
@@ -415,9 +465,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
       isScrollControlled: true,
       builder: (ctx) {
         return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.paddingOf(ctx).bottom,
-          ),
+          padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(ctx).bottom),
           child: SizedBox(
             height: 320,
             child: Column(
@@ -471,9 +519,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
 
   Future<void> _confirmAndSubmitToSystem(OrderEntity order) async {
     if (_isRefundedStatus(order.status)) {
-      _showErrorSnackBar(
-        'Iade edilen siparislerde toplama modu kullanilamaz.',
-      );
+      _showErrorSnackBar('Iade edilen siparislerde toplama modu kullanilamaz.');
       return;
     }
 
@@ -549,6 +595,7 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
               behavior: SnackBarBehavior.floating,
             ),
           );
+          unawaited(widget.onMutatedSuccess());
         },
         error: (error, _) {
           messenger.showSnackBar(
@@ -715,24 +762,21 @@ final class _OrderPrepareBodyState extends ConsumerState<_OrderPrepareBody> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final item = order.items[index];
-                  final s = scanned[item.id] ?? 0;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _OrderLineCard(
-                      orderId: order.id,
-                      item: item,
-                      packMode: isPackModeActive,
-                      scannedCount: s,
-                      packStatusLabel: _packLineLabel(item, s),
-                      packStatusColor: _packLineColor(context, item, s),
-                    ),
-                  );
-                },
-                childCount: order.items.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final item = order.items[index];
+                final s = scanned[item.id] ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _OrderLineCard(
+                    orderId: order.id,
+                    item: item,
+                    packMode: isPackModeActive,
+                    scannedCount: s,
+                    packStatusLabel: _packLineLabel(item, s),
+                    packStatusColor: _packLineColor(context, item, s),
+                  ),
+                );
+              }, childCount: order.items.length),
             ),
           ),
         if (order.shippingAddress != null && !order.shippingAddress!.isEmpty)
@@ -1014,8 +1058,10 @@ final class _OrderLineCard extends ConsumerWidget {
                           tooltip: 'Azalt',
                           onPressed: scannedCount > 0
                               ? () => ref
-                                  .read(packProgressProvider(orderId).notifier)
-                                  .incrementLine(item.id, -1)
+                                    .read(
+                                      packProgressProvider(orderId).notifier,
+                                    )
+                                    .incrementLine(item.id, -1)
                               : null,
                           icon: const Icon(Icons.remove),
                         ),
@@ -1095,8 +1141,8 @@ final class _ProductThumb extends ConsumerWidget {
             width: size,
             height: size,
             fit: BoxFit.cover,
-            memCacheWidth:
-                (size * MediaQuery.of(context).devicePixelRatio).round(),
+            memCacheWidth: (size * MediaQuery.of(context).devicePixelRatio)
+                .round(),
             placeholder: (_, __) => Container(
               width: size,
               height: size,
@@ -1148,13 +1194,12 @@ final class _LabeledRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textStyle =
-        monospace
-            ? theme.textTheme.bodyLarge?.copyWith(
-              fontFamily: 'monospace',
-              letterSpacing: 0.4,
-            )
-            : theme.textTheme.bodyLarge;
+    final textStyle = monospace
+        ? theme.textTheme.bodyLarge?.copyWith(
+            fontFamily: 'monospace',
+            letterSpacing: 0.4,
+          )
+        : theme.textTheme.bodyLarge;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1252,10 +1297,9 @@ final class _ShippingCard extends StatelessWidget {
                 ),
                 IconButton(
                   tooltip: 'Telefonu kopyala',
-                  onPressed:
-                      address.phone.isEmpty
-                          ? null
-                          : () => _copy(context, 'Telefon', address.phone),
+                  onPressed: address.phone.isEmpty
+                      ? null
+                      : () => _copy(context, 'Telefon', address.phone),
                   icon: const Icon(Icons.copy_rounded),
                 ),
               ],
@@ -1276,8 +1320,7 @@ final class _ShippingCard extends StatelessWidget {
             if (address.address.isEmpty)
               Text('-', style: theme.textTheme.bodyLarge),
             const SizedBox(height: 10),
-            if (address.location.isNotEmpty ||
-                address.subLocation.isNotEmpty)
+            if (address.location.isNotEmpty || address.subLocation.isNotEmpty)
               SelectableText(
                 [
                   address.location,
@@ -1300,7 +1343,7 @@ Future<void> _copy(BuildContext context, String label, String text) async {
   if (trimmed.isEmpty || trimmed == '-') return;
   await Clipboard.setData(ClipboardData(text: trimmed));
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$label kopyalandi')),
-  );
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text('$label kopyalandi')));
 }
