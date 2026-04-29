@@ -1,408 +1,221 @@
-# Kurumsal İrsaliye ve Depo Otomasyonu — Geliştirme Planı
+# Kurumsal İrsaliye ve Depo Otomasyonu — Nihai Revize Plan
 
-Excel veri içe aktarımı, mobil saha sayımı ve masaüstü muhasebe kontrolünden oluşan üç parçalı sistemin Melos monorepo + Clean Architecture mimarisinde issue'lara bölünmüş uygulama planı.
+Bu plan, açık soruların tamamı cevaplandıktan sonra güncellenmiş nihai sürümdür. Hedef mimari: tek repo içinde `mobile` + `desktop` + `backend`, masaüstünde `Electron + React + TypeScript`, backend'de Supabase.
 
-## Proje Kapsamı
+## 1) Kapsam ve Kesin Kararlar
 
-1. **Data Importer:** Excel verisini okuyup veritabanına basar.
-2. **Mobil Uygulama:** İrsaliye bazlı barkod okuma, adet girme, realtime güncelleme.
-3. **Masaüstü Uygulama:** Mobilde tamamlanan irsaliyeleri kontrol eder, muhasebeye aktarır.
+- Desktop importer Excel okur, IdeaSoft ile varyant enrichment yapar, Supabase'e yazar.
+- Mobilde tek picker kuralı vardır; aynı irsaliyede aynı anda bir kişi çalışır.
+- Mobil scan gerçek varyant barkodu ile yapılır; `picked_items` gerçek barkodu saklar.
+- Muhasebeye gönderimde parent toplam değil, okutulan gerçek varyant barkod + adet gönderilir.
 
-## Mimari Karar
+### Netleşen Operasyonel Kararlar
 
-- **Monorepo:** Melos ile `apps/*` + `packages/*`
-- **Clean Architecture:** `core` (domain) -> `data` -> `adapter`
-- **Repository Pattern:** tüm veri erişimi abstract repository üzerinden
-- **State Management:** Riverpod (mevcut kodla uyum + test kolaylığı)
+- IdeaSoft erişimi: `preconfigured_env_token`
+- Enrichment cache: `manual_refresh_only`
+- Enrichment hata davranışı: `retry_then_skip` (warning ile devam)
+- Varyant bulunamazsa: `parent == variant`
+- Picked aggregation: `upsert_single_row`
+- Picked unique/upsert key: `(waybill_id, actual_variant_barcode)`
+- Prefix eşleşmede minimum karakter kuralı: yok
+- Kilit devral/kaldır: `admin_only`
+- Lock audit: `detailed_log_with_reason`
+- Muhasebe payload: sadece `actual_variant_barcode + quantity`
+- Muhasebe retry: 3 deneme, exponential backoff
 
-## Hedef Klasör Ağacı
+## 2) Mimari ve Veri Akışı
+
+```mermaid
+flowchart TD
+    excelInput["Excel Input (parent_barcode, qty)"]
+    desktopImport["Desktop Import"]
+    ideasoftToken["IdeaSoft Env Token"]
+    ideasoftApi["IdeaSoft API"]
+    waybills[("waybills")]
+    expectedItems[("expected_items")]
+    expectedVariants[("expected_item_variants")]
+    mobileScan["Mobile Scan"]
+    pickedItems[("picked_items")]
+    accountingPayload["Accounting Payload"]
+    accountingApi["Accounting API"]
+
+    excelInput --> desktopImport
+    desktopImport --> waybills
+    desktopImport --> expectedItems
+    desktopImport --> ideasoftToken
+    ideasoftToken --> ideasoftApi
+    ideasoftApi --> expectedVariants
+    mobileScan --> pickedItems
+    pickedItems --> accountingPayload
+    accountingPayload --> accountingApi
+```
+
+## 3) Issue Sırası
 
 ```text
-mavikalem/
-├─ melos.yaml
-├─ pubspec.yaml
-├─ analysis_options.yaml
-├─ apps/
-│  ├─ mavikalem_mobil/
-│  └─ mavikalem_masaustu/
-├─ packages/
-│  ├─ mavikalem_core/
-│  ├─ mavikalem_data/
-│  ├─ mavikalem_supabase/
-│  ├─ mavikalem_accounting/
-│  ├─ mavikalem_ui/
-│  └─ mavikalem_lints/
-├─ backend/
-│  └─ supabase/
-│     ├─ migrations/
-│     └─ sql/
-└─ tools/
-   └─ waybill-importer/
+Issue 1 -> Issue 2 -> Issue 3 -> Issue 4 -> Issue 4.5 -> Issue 5 -> Issue 6 -> Issue 7
+      -> Issue 8 -> Issue 9 -> Issue 10 -> Issue 11 -> Issue 12 -> Issue 13
 ```
 
 ---
 
-## Issue 1: Monorepo Iskeleti (Melos)
+## Issue 2: Supabase Şeması, RLS ve Realtime (Revize)
 
-**Description**
+**Yapılacaklar**
+- [ ] `waybills`: `locked_by_user_id`, `locked_at` alanlarını koru.
+- [ ] `expected_items`: `parent_barcode`, `total_expected_qty`, `enrichment_status`.
+- [ ] `expected_item_variants`: `expected_item_id`, `variant_barcode`, `variant_options`, `ideasoft_product_id`.
+- [ ] `picked_items`: `parent_expected_item_id`, `actual_variant_barcode`, `quantity`.
+- [ ] `picked_items` unique/upsert key: `(waybill_id, actual_variant_barcode)`.
+- [ ] `lock_waybill` / `release_waybill` RPC.
+- [ ] Admin için `force_unlock_waybill` (veya eşdeğeri) admin-only RPC.
+- [ ] Lock audit tablosu (veya mevcut audit yapısı) zorunlu `reason` alanı ile.
 
-Mevcut tek kök Flutter projesini monorepo yapısına dönüştür. `apps/mavikalem_mobil` mevcut kodun yeni evi olacak, `apps/mavikalem_masaustu` yeni app olarak açılacak.
+**Teknik Notlar**
+- RLS: `authenticated` rolü + `auth.uid()`.
+- `force_unlock` yalnızca admin role claim ile.
 
-**Implementation Plan**
-
-- `melos.yaml` oluştur (`apps/**`, `packages/**`)
-- root `pubspec.yaml` workspace olacak şekilde sadeleştir
-- mevcut mobil app dosyalarını `apps/mavikalem_mobil/` altına taşı
-- masaüstü app’i `apps/mavikalem_masaustu/` olarak oluştur
-- boş paketleri `packages/` altında aç
-
-**Test/Commit Kriteri**
-
-- `melos bootstrap` başarılı
-- `melos run analyze` 0 hata
-
----
-
-## Issue 2: Core Domain Paketi
-
-**Description**
-
-Pure Dart domain katmanı (`mavikalem_core`) oluşturulur. Flutter/Supabase bağımlılığı olmayacak.
-
-**Implementation Plan**
-
-- `entities`: `Waybill`, `ExpectedItem`, `PickedItem`, `PickingSession`, `AccountingSubmission`
-- `value_objects`: `Barcode`, `Sku`, `WaybillStatus`
-- `failures`: `Failure` hiyerarşisi
-- barrel export dosyası
-
-**Test/Commit Kriteri**
-
-- entity/value object unit testleri geçer
+**DoD**
+- [ ] Tek picker lock kuralı çalışır.
+- [ ] Admin lock takeover reason olmadan yapılamaz.
 
 ---
 
-## Issue 3: Abstract Repository + Use Case
+## Issue 4: Excel Parse (Revize)
 
-**Description**
-
-Core içinde repository interface’leri ve use case’ler yazılır.
-
-**Implementation Plan**
-
-- `WaybillRepository`, `PickingRepository`, `AccountingRepository` (abstract)
-- waybill/picking/accounting use case’leri
-- `PickingProgressCalculator`, `VarianceCalculator` (pure service)
-
-**Test/Commit Kriteri**
-
-- mock repository ile tüm use case testleri geçer
+**Yapılacaklar**
+- [ ] Header mapping: `irsaliye_no`, `parent_barcode`, `urun_adi`, `adet`.
+- [ ] `parent_barcode` zorunlu validasyon.
+- [ ] Parse sonucu: `validRows`, `invalidRows`, `warnings`, `source`.
 
 ---
 
-## Issue 4: Supabase Şeması (Waybill-Centric)
+## Issue 4.5: IdeaSoft Variant Enrichment (Yeni)
 
-**Description**
+**Yapılacaklar**
+- [ ] Desktop IdeaSoft client: env token ile çağrı.
+- [ ] `enrichVariants(parentBarcode)` (`q[barcode_start]`, gerekirse `q[barcode_cont]`).
+- [ ] Cache politikası: `manual_refresh_only` (kullanıcı aksiyonu ile yenile).
+- [ ] Hata politikası: 3 retry değil, enrichment için kısa retry + `enrichment_failed` işaretle, importu durdurma.
+- [ ] Varyant bulunamazsa `parent == variant` fallback üret.
 
-Backend tablosu `waybill` merkezli normalize edilir; realtime + RLS aktif.
+**Referans**
+- Mevcut yaklaşım: [lib/features/product_check/data/datasources/product_remote_datasource.dart](lib/features/product_check/data/datasources/product_remote_datasource.dart)
 
-**Implementation Plan**
-
-- `waybills`, `expected_items`, `picking_sessions`, `picked_items`, `accounting_submissions`
-- trigger + index + unique constraints
-- `add_picked_item` RPC fonksiyonu
-- migration dosyaları
-
-**Test/Commit Kriteri**
-
-- `supabase db reset` sonrası şema sorunsuz kurulur
-
----
-
-## Issue 5: Data Importer Adaptasyonu
-
-**Description**
-
-`tools/waybill-importer` yeni Supabase şemasına uyarlanır.
-
-**Implementation Plan**
-
-- waybill upsert sonrası `id` map (waybill_number -> uuid)
-- expected_items upsert conflict: `(waybill_id, sku)`
-- status alanı enum ile uyumlu (`pending` default)
-
-**Test/Commit Kriteri**
-
-- dry-run ve gerçek insert senaryoları başarıyla çalışır
+**DoD**
+- [ ] Varyant bulunan parent için `expected_item_variants` üretilir.
+- [ ] Varyant bulunamayan parent fallback ile importtan düşmez.
 
 ---
 
-## Issue 6: Data Katmanı (`mavikalem_data`)
+## Issue 5: Onay Ekranı (Revize)
 
-**Description**
+**Yapılacaklar**
+- [ ] Parent kalem + varyant alt liste (accordion) göster.
+- [ ] `enrichment_failed` satırlar için uyarı rozetleri.
+- [ ] Warning onayıyla importa devam edebilme.
 
-Repository implementasyonları, DTO mapleme ve datasource abstraction katmanı.
-
-**Implementation Plan**
-
-- DTO: `waybill_dto`, `expected_item_dto`, `picked_item_dto`
-- datasource interface’leri
-- repository impl’ler (`*_repository_impl.dart`)
-- exception -> failure mapping
-
-**Test/Commit Kriteri**
-
-- JSON roundtrip testleri + repository unit testleri
+**DoD**
+- [ ] Kullanıcı `enrichment_failed` satırları görüp onay vererek devam edebilir.
 
 ---
 
-## Issue 7: Supabase Adapter (`mavikalem_supabase`)
+## Issue 6: Supabase Yazımı (Revize)
 
-**Description**
+**Yazım sırası**
+- [ ] `waybills` -> `expected_items` -> `expected_item_variants`
 
-Data katmanındaki abstract datasource’ların Supabase implementasyonu.
-
-**Implementation Plan**
-
-- `supabase_client_provider`
-- `supabase_waybill_datasource`
-- `supabase_picking_datasource`
-- realtime `picked_items` channel
-
-**Test/Commit Kriteri**
-
-- integration testte fetch + realtime + rpc çağrıları geçer
+**Conflict anahtarları**
+- [ ] `waybills(waybill_number)`
+- [ ] `expected_items(waybill_id, parent_barcode)`
+- [ ] `expected_item_variants(expected_item_id, variant_barcode)`
 
 ---
 
-## Issue 8: Mobil App Bootstrap
+## Issue 7: Doğrulama Ekranı (Revize)
 
-**Description**
-
-`mavikalem_mobil` için Riverpod DI, router, auth bootstrap.
-
-**Implementation Plan**
-
-- app/router/bootstrap yapısı kur
-- provider wiring (`repository` + `usecase`)
-- mevcut auth/theme parçalarını taşı ve importları güncelle
-
-**Test/Commit Kriteri**
-
-- login -> waybill listesi akışı açılır
+**Yapılacaklar**
+- [ ] Parent + variant seviyesinde karşılaştırma.
+- [ ] Eksik/çok varyant uyarı rozeti.
 
 ---
 
-## Issue 9: Mobil İrsaliye Liste/Detay
+## Issue 9: Mobil Barkod Okutma (Revize)
 
-**Description**
+**Eşleşme sırası**
+1. `expected_item_variants.variant_barcode` exact
+2. `expected_item_variants.variant_barcode` prefix
+3. `expected_items.parent_barcode` prefix
+4. manuel arama
 
-Açık irsaliyeler listelenir; detayda beklenen/sayılan ilerleme realtime görünür.
+**Yapılacaklar**
+- [ ] Scan sonucu `picked_items.actual_variant_barcode` alanına gerçek kodu yaz.
+- [ ] Upsert key: `(waybill_id, actual_variant_barcode)` ile quantity artır.
+- [ ] Parent bağını `parent_expected_item_id` üzerinden sürdür.
 
-**Implementation Plan**
-
-- `waybills_list_page`
-- `waybill_detail_page`
-- `waybill_detail_controller` (expected + picked stream birleştirme)
-
-**Test/Commit Kriteri**
-
-- widget testleri: liste, arama, detay progress
-
----
-
-## Issue 10: Mobil Barkod Sayım Ekranı
-
-**Description**
-
-Kamera tarama, adet onayı, pick kaydı ve eşzamanlı güncelleme.
-
-**Implementation Plan**
-
-- `picking_page`
-- `picking_controller`
-- `quantity_dialog`
-- scanner throttle/debounce koruması
-
-**Test/Commit Kriteri**
-
-- scan -> modal -> onay -> use case çağrısı doğrulanır
+**Referans**
+- Prefix davranışı: [lib/features/product_check/domain/barcode_prefix_matcher.dart](lib/features/product_check/domain/barcode_prefix_matcher.dart)
 
 ---
 
-## Issue 11: Mobil Tamamlama Akışı
+## Issue 10: Realtime + Tamamlama (Revize)
 
-**Description**
-
-İrsaliye tamamla, variance kontrol et, session sonlandır.
-
-**Implementation Plan**
-
-- `complete_waybill_dialog`
-- `complete_waybill_controller`
-- force complete opsiyonu (eksik kalem olsa bile)
-
-**Test/Commit Kriteri**
-
-- complete use case happy/error/force path testleri
+**Yapılacaklar**
+- [ ] `lock_waybill` ile girişte kilit al.
+- [ ] Çıkış/tamamlama ile `release_waybill`.
+- [ ] Admin-only lock takeover UI aksiyonu ekle.
+- [ ] Lock takeover sırasında zorunlu `reason` alanı.
 
 ---
 
-## Issue 12: Masaüstü Bootstrap + Review
+## Issue 12: Muhasebe Gateway (Revize)
 
-**Description**
+**Payload modeli**
 
-`mavikalem_masaustu` iskeleti ve tamamlanan irsaliyelerin kontrol ekranı.
+```ts
+type AccountingLine = {
+  parent_barcode: string;
+  actual_variant_barcode: string;
+  quantity: number;
+};
+```
 
-**Implementation Plan**
-
-- desktop router + sidebar layout
-- `completed_waybills_page` (DataTable)
-- `waybill_review_detail_page` (beklenen/sayılan/fark)
-
-**Test/Commit Kriteri**
-
-- masaüstünde liste + detay akışı çalışır
-
----
-
-## Issue 13: Muhasebe Gateway Paketi
-
-**Description**
-
-Muhasebe entegrasyonu için abstract gateway + REST/mock adapter.
-
-**Implementation Plan**
-
-- `AccountingGateway` contract
-- `rest_accounting_gateway`
-- `mock_accounting_gateway`
-- submission model/result sınıfları
-
-**Test/Commit Kriteri**
-
-- mock ile e2e submission, REST retry senaryosu testleri
+**Yapılacaklar**
+- [ ] Mock + REST adapter bu modele uyumlu.
+- [ ] Retry politikası: 3 deneme, exponential backoff (1s, 2s, 4s).
 
 ---
 
-## Issue 14: Masaüstü Muhasebe Gönderim Akışı
+## Issue 13: Muhasebe Gönderim (Revize)
 
-**Description**
-
-Tamamlanan irsaliyeleri masaüstünden muhasebeye gönder, durum izle, retry yap.
-
-**Implementation Plan**
-
-- `accounting_export_page`
-- `submit_review_dialog`
-- `submit_controller`
-- başarı/hata/retry UI durumları
-
-**Test/Commit Kriteri**
-
-- dialog onayı sonrası submit çağrısı ve retry akışı testten geçer
+**Yapılacaklar**
+- [ ] Payload'u doğrudan `picked_items` verisinden üret.
+- [ ] Aynı varyant barkod için tek satır upsert quantity değeri gönder.
+- [ ] Başarısızlıkta otomatik 3 retry, sonra `failed`.
+- [ ] `accounting_submissions.payload` içinde gönderilen varyant satırlarını sakla.
 
 ---
 
-## Açık Sorular (Plan Sonu)
+## 9) Karara Bağlanan Konular (v1)
 
-1. Mevcut `mavikalem_app` tamamen bu yeni sistemin mobil uygulamasına mı evrilecek?
-2. Masaüstü hedef yalnızca Windows mu, yoksa macOS da kesin kapsamda mı?
-3. Muhasebe yazılımının entegrasyon tipi nedir (REST / SOAP / COM / dosya aktarımı)?
-4. Excel verisi nasıl üretiliyor (manuel, OCR, üçüncü parti)?
-5. Mobil kullanıcı doğrulama modeli nedir (Supabase auth mı, cihaz bazlı mı)?
-6. Barkod eşleşmesi tek barkod mu, çoklu barkod desteği gerekli mi?
-7. Aynı irsaliyede çoklu picker eşzamanlı çalışabilecek mi?
-8. Offline çalışma zorunluluğu var mı?
-9. Projede tek state standardı Riverpod olarak netleşsin mi?
+| Konu | Karar |
+|------|-------|
+| IdeaSoft token | env token |
+| Cache | manual refresh only |
+| Enrichment failed | warning ile devam |
+| Varyant yoksa | parent == variant |
+| Picked key | waybill_id + actual_variant_barcode |
+| Lock takeover | admin only + reason zorunlu |
+| Muhasebe payload | actual_variant_barcode + quantity |
+| Muhasebe retry | 3x exponential |
 
+## 11) Netleşen Detay Kararları
 
-
-
-## 📝 Geliştirme TODO Listesi
-
-### Faz 0: Altyapı ve Domain
-- [ ] **Issue 1: Monorepo Iskeleti (Melos)**
-  - [ ] `melos.yaml` oluştur (`apps/**`, `packages/**`)
-  - [ ] root `pubspec.yaml` workspace olacak şekilde sadeleştir
-  - [ ] mevcut mobil app dosyalarını `apps/mavikalem_mobil/` altına taşı
-  - [ ] masaüstü app’i `apps/mavikalem_masaustu/` olarak oluştur
-  - [ ] boş paketleri `packages/` altında aç
-- [ ] **Issue 2: Core Domain Paketi**
-  - [ ] `entities`: `Waybill`, `ExpectedItem`, `PickedItem`, `PickingSession`, `AccountingSubmission` oluştur
-  - [ ] `value_objects`: `Barcode`, `Sku`, `WaybillStatus` oluştur
-  - [ ] `failures`: `Failure` hiyerarşisi kur
-  - [ ] barrel export dosyası oluştur
-- [ ] **Issue 3: Abstract Repository + Use Case**
-  - [ ] `WaybillRepository`, `PickingRepository`, `AccountingRepository` (abstract) yaz
-  - [ ] waybill/picking/accounting use case’leri oluştur
-  - [ ] `PickingProgressCalculator`, `VarianceCalculator` (pure service) yaz
-
-### Faz 1: Backend ve Veri İçe Aktarım
-- [ ] **Issue 4: Supabase Şeması (Waybill-Centric)**
-  - [ ] `waybills`, `expected_items`, `picking_sessions`, `picked_items`, `accounting_submissions` tablolarını oluştur
-  - [ ] trigger + index + unique constraints ekle
-  - [ ] `add_picked_item` RPC fonksiyonunu yaz
-  - [ ] migration dosyalarını oluştur
-- [ ] **Issue 5: Data Importer Adaptasyonu**
-  - [ ] waybill upsert sonrası `id` map (waybill_number -> uuid) entegre et
-  - [ ] expected_items upsert conflict: `(waybill_id, sku)` ayarla
-  - [ ] status alanı enum ile uyumlu (`pending` default) yap
-
-### Faz 2: Veri Katmanı ve Supabase Adapter
-- [ ] **Issue 6: Data Katmanı (`mavikalem_data`)**
-  - [ ] DTO'ları yaz: `waybill_dto`, `expected_item_dto`, `picked_item_dto`
-  - [ ] datasource interface’leri oluştur
-  - [ ] repository impl’ler (`*_repository_impl.dart`) yaz
-  - [ ] exception -> failure mapping yap
-- [ ] **Issue 7: Supabase Adapter (`mavikalem_supabase`)**
-  - [ ] `supabase_client_provider` kur
-  - [ ] `supabase_waybill_datasource` yaz
-  - [ ] `supabase_picking_datasource` yaz
-  - [ ] realtime `picked_items` channel entegre et
-
-### Faz 3: Mobil Uygulama
-- [ ] **Issue 8: Mobil App Bootstrap**
-  - [ ] app/router/bootstrap yapısı kur
-  - [ ] provider wiring (`repository` + `usecase`) bağla
-  - [ ] mevcut auth/theme parçalarını taşı ve importları güncelle
-- [ ] **Issue 9: Mobil İrsaliye Liste/Detay**
-  - [ ] `waybills_list_page` UI yaz
-  - [ ] `waybill_detail_page` UI yaz
-  - [ ] `waybill_detail_controller` (expected + picked stream birleştirme) yaz
-- [ ] **Issue 10: Mobil Barkod Sayım Ekranı**
-  - [ ] `picking_page` UI yaz
-  - [ ] `picking_controller` oluştur
-  - [ ] `quantity_dialog` ekle
-  - [ ] scanner throttle/debounce koruması ekle
-- [ ] **Issue 11: Mobil Tamamlama Akışı**
-  - [ ] `complete_waybill_dialog` UI yaz
-  - [ ] `complete_waybill_controller` oluştur
-  - [ ] force complete opsiyonunu (eksik kalem olsa bile) entegre et
-
-### Faz 4: Masaüstü Uygulama ve Muhasebe
-- [ ] **Issue 12: Masaüstü Bootstrap + Review**
-  - [ ] desktop router + sidebar layout kur
-  - [ ] `completed_waybills_page` (DataTable) yaz
-  - [ ] `waybill_review_detail_page` (beklenen/sayılan/fark) yaz
-- [ ] **Issue 13: Muhasebe Gateway Paketi**
-  - [ ] `AccountingGateway` contract yaz
-  - [ ] `rest_accounting_gateway` adapter yaz
-  - [ ] `mock_accounting_gateway` adapter yaz
-  - [ ] submission model/result sınıflarını oluştur
-- [ ] **Issue 14: Masaüstü Muhasebe Gönderim Akışı**
-  - [ ] `accounting_export_page` UI yaz
-  - [ ] `submit_review_dialog` UI yaz
-  - [ ] `submit_controller` oluştur
-  - [ ] başarı/hata/retry UI durumlarını bağla
-
-### ❓ Netleştirilecek Açık Sorular
-- [ ] Mevcut `mavikalem_app` akıbeti kararlaştırılacak.
-- [ ] Masaüstü hedef işletim sistemleri (Win/Mac) kesinleştirilecek.
-- [ ] Muhasebe entegrasyon tipi (REST/SOAP/COM) netleştirilecek.
-- [ ] Excel verisi üretim yöntemi netleştirilecek.
-- [ ] Mobil kullanıcı doğrulama modeli (Auth vs Cihaz) seçilecek.
-- [ ] Barkod eşleşme stratejisi (Tek/Çoklu) kararlaştırılacak.
-- [ ] Çoklu picker eşzamanlı çalışma durumu kararlaştırılacak.
-- [ ] Offline çalışma zorunluluğu netleştirilecek.
-- [ ] State management (Sadece Riverpod mu?) kesinleştirilecek.
+1. IdeaSoft token kullanıcı oturumundan değil env'den alınır.
+2. Enrichment cache otomatik TTL yerine manuel yenilemeyle yönetilir.
+3. `enrichment_failed` satırlar importu bloklamaz, warning ile devam eder.
+4. Parent barkod varyantsızsa fallback tek varyant kabul edilir.
+5. Picked kayıtları `(waybill_id, actual_variant_barcode)` üzerinden birikir.
+6. Prefix eşleşmede minimum karakter limiti yoktur.
+7. Muhasebeye `variant_options` gönderilmez.
+8. Kilit devral/kaldır admin ekranından gerekçeli yapılır.
