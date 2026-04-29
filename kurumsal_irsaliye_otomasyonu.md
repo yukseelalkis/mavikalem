@@ -316,3 +316,93 @@ Tamamlanan irsaliyeleri masaüstünden muhasebeye gönder, durum izle, retry yap
 8. Offline çalışma zorunluluğu var mı?
 9. Projede tek state standardı Riverpod olarak netleşsin mi?
 
+
+
+
+## 📝 Geliştirme TODO Listesi
+
+### Faz 0: Altyapı ve Domain
+- [ ] **Issue 1: Monorepo Iskeleti (Melos)**
+  - [ ] `melos.yaml` oluştur (`apps/**`, `packages/**`)
+  - [ ] root `pubspec.yaml` workspace olacak şekilde sadeleştir
+  - [ ] mevcut mobil app dosyalarını `apps/mavikalem_mobil/` altına taşı
+  - [ ] masaüstü app’i `apps/mavikalem_masaustu/` olarak oluştur
+  - [ ] boş paketleri `packages/` altında aç
+- [ ] **Issue 2: Core Domain Paketi**
+  - [ ] `entities`: `Waybill`, `ExpectedItem`, `PickedItem`, `PickingSession`, `AccountingSubmission` oluştur
+  - [ ] `value_objects`: `Barcode`, `Sku`, `WaybillStatus` oluştur
+  - [ ] `failures`: `Failure` hiyerarşisi kur
+  - [ ] barrel export dosyası oluştur
+- [ ] **Issue 3: Abstract Repository + Use Case**
+  - [ ] `WaybillRepository`, `PickingRepository`, `AccountingRepository` (abstract) yaz
+  - [ ] waybill/picking/accounting use case’leri oluştur
+  - [ ] `PickingProgressCalculator`, `VarianceCalculator` (pure service) yaz
+
+### Faz 1: Backend ve Veri İçe Aktarım
+- [ ] **Issue 4: Supabase Şeması (Waybill-Centric)**
+  - [ ] `waybills`, `expected_items`, `picking_sessions`, `picked_items`, `accounting_submissions` tablolarını oluştur
+  - [ ] trigger + index + unique constraints ekle
+  - [ ] `add_picked_item` RPC fonksiyonunu yaz
+  - [ ] migration dosyalarını oluştur
+- [ ] **Issue 5: Data Importer Adaptasyonu**
+  - [ ] waybill upsert sonrası `id` map (waybill_number -> uuid) entegre et
+  - [ ] expected_items upsert conflict: `(waybill_id, sku)` ayarla
+  - [ ] status alanı enum ile uyumlu (`pending` default) yap
+
+### Faz 2: Veri Katmanı ve Supabase Adapter
+- [ ] **Issue 6: Data Katmanı (`mavikalem_data`)**
+  - [ ] DTO'ları yaz: `waybill_dto`, `expected_item_dto`, `picked_item_dto`
+  - [ ] datasource interface’leri oluştur
+  - [ ] repository impl’ler (`*_repository_impl.dart`) yaz
+  - [ ] exception -> failure mapping yap
+- [ ] **Issue 7: Supabase Adapter (`mavikalem_supabase`)**
+  - [ ] `supabase_client_provider` kur
+  - [ ] `supabase_waybill_datasource` yaz
+  - [ ] `supabase_picking_datasource` yaz
+  - [ ] realtime `picked_items` channel entegre et
+
+### Faz 3: Mobil Uygulama
+- [ ] **Issue 8: Mobil App Bootstrap**
+  - [ ] app/router/bootstrap yapısı kur
+  - [ ] provider wiring (`repository` + `usecase`) bağla
+  - [ ] mevcut auth/theme parçalarını taşı ve importları güncelle
+- [ ] **Issue 9: Mobil İrsaliye Liste/Detay**
+  - [ ] `waybills_list_page` UI yaz
+  - [ ] `waybill_detail_page` UI yaz
+  - [ ] `waybill_detail_controller` (expected + picked stream birleştirme) yaz
+- [ ] **Issue 10: Mobil Barkod Sayım Ekranı**
+  - [ ] `picking_page` UI yaz
+  - [ ] `picking_controller` oluştur
+  - [ ] `quantity_dialog` ekle
+  - [ ] scanner throttle/debounce koruması ekle
+- [ ] **Issue 11: Mobil Tamamlama Akışı**
+  - [ ] `complete_waybill_dialog` UI yaz
+  - [ ] `complete_waybill_controller` oluştur
+  - [ ] force complete opsiyonunu (eksik kalem olsa bile) entegre et
+
+### Faz 4: Masaüstü Uygulama ve Muhasebe
+- [ ] **Issue 12: Masaüstü Bootstrap + Review**
+  - [ ] desktop router + sidebar layout kur
+  - [ ] `completed_waybills_page` (DataTable) yaz
+  - [ ] `waybill_review_detail_page` (beklenen/sayılan/fark) yaz
+- [ ] **Issue 13: Muhasebe Gateway Paketi**
+  - [ ] `AccountingGateway` contract yaz
+  - [ ] `rest_accounting_gateway` adapter yaz
+  - [ ] `mock_accounting_gateway` adapter yaz
+  - [ ] submission model/result sınıflarını oluştur
+- [ ] **Issue 14: Masaüstü Muhasebe Gönderim Akışı**
+  - [ ] `accounting_export_page` UI yaz
+  - [ ] `submit_review_dialog` UI yaz
+  - [ ] `submit_controller` oluştur
+  - [ ] başarı/hata/retry UI durumlarını bağla
+
+### ❓ Netleştirilecek Açık Sorular
+- [ ] Mevcut `mavikalem_app` akıbeti kararlaştırılacak.
+- [ ] Masaüstü hedef işletim sistemleri (Win/Mac) kesinleştirilecek.
+- [ ] Muhasebe entegrasyon tipi (REST/SOAP/COM) netleştirilecek.
+- [ ] Excel verisi üretim yöntemi netleştirilecek.
+- [ ] Mobil kullanıcı doğrulama modeli (Auth vs Cihaz) seçilecek.
+- [ ] Barkod eşleşme stratejisi (Tek/Çoklu) kararlaştırılacak.
+- [ ] Çoklu picker eşzamanlı çalışma durumu kararlaştırılacak.
+- [ ] Offline çalışma zorunluluğu netleştirilecek.
+- [ ] State management (Sadece Riverpod mu?) kesinleştirilecek.
